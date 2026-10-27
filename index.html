@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>鋼魂戰線：鐵鴉之夜 Iron Front: Night of the Ravens</title>
+  <meta name="description" content="以《鋼魂戰線》3D 引擎拍攝的機甲動畫短片：黃昏的廢墟街道，鐵鴉一號對上黑犬，30 秒的槍戰、飛彈、刀棍交擊與最後一擊。">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E🎬%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <div id="frame">
+    <canvas id="gl"></canvas>
+    <div id="vignette"></div>
+    <div id="flash"></div>
+    <div id="title"></div>
+    <div id="end"></div>
+    <div id="sub"></div>
+    <div id="fade"></div>
+    <div id="start">
+      <div id="st"></div>
+      <p id="blurb"></p>
+      <button id="go">▶</button>
+      <p id="hint"></p>
+    </div>
+  </div>
+  <div id="bar">
+    <button id="pp" aria-label="play / pause">▶</button>
+    <input id="scrub" type="range" min="0" max="30" step="0.01" value="0" aria-label="time">
+    <span id="time">00.0 / 30.0</span>
+    <button id="lang">EN</button>
+    <button id="mute" aria-label="sound">🔊</button>
+    <button id="fs" aria-label="full screen">⛶</button>
+  </div>
+  <script src="/hub.js" defer data-pos="top-right"></script>
+  <script type="module" src="js/film.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+:root { --gold: #e8b860; --ink: #f2ece0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--ink); overflow: hidden; font-family: 'Noto Sans TC', system-ui, sans-serif; }
+#frame { position: absolute; overflow: hidden; background: #000; }
+#gl { position: absolute; inset: 0; display: block; }
+#vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
+#flash { position: absolute; inset: 0; pointer-events: none; background: #fff6e8; opacity: 0; mix-blend-mode: screen; }
+#fade { position: absolute; inset: 0; pointer-events: none; background: #000; opacity: 1; }
+
+#title, #end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; opacity: 0; text-shadow: 0 0.1em 0.6em rgba(0, 0, 0, 0.85); }
+#title b, #end b { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 3.3em; letter-spacing: 0.3em; margin-right: -0.3em; color: var(--ink); }
+#title i { font-style: normal; font-family: 'Noto Serif TC', serif; font-size: 1.5em; letter-spacing: 0.5em; margin-right: -0.5em; color: var(--gold); margin-top: 0.2em; }
+#title small, #end small { font-size: 0.8em; letter-spacing: 0.25em; margin-top: 1.4em; opacity: 0.85; }
+#end { justify-content: flex-start; padding-top: 7%; }
+#end b { font-size: 1.8em; letter-spacing: 0.2em; }
+#end small { color: var(--gold); font-size: 1em; }
+
+#sub { position: absolute; left: 8%; right: 8%; bottom: 6%; text-align: center; font-size: 1.15em; font-weight: 500; line-height: 1.5; opacity: 0; pointer-events: none; text-shadow: 0 0 0.3em #000, 0 0.08em 0.15em #000; }
+#sub .who { color: var(--gold); font-weight: 700; margin-right: 0.8em; font-size: 0.85em; letter-spacing: 0.08em; }
+
+#start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6em; background: radial-gradient(ellipse at center, rgba(20, 12, 10, 0.55), rgba(0, 0, 0, 0.85)); z-index: 5; text-align: center; padding: 0 16px; }
+#start[hidden] { display: none; }
+#st { display: flex; flex-direction: column; align-items: center; }
+#st b { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 3em; letter-spacing: 0.3em; margin-right: -0.3em; }
+#st i { font-style: normal; font-family: 'Noto Serif TC', serif; color: var(--gold); font-size: 1.4em; letter-spacing: 0.5em; margin-right: -0.5em; }
+#blurb { margin: 0.4em 0 0.8em; opacity: 0.8; font-size: 0.9em; }
+#hint { margin: 0.4em 0 0; opacity: 0.5; font-size: 0.75em; }
+#go { font: inherit; font-size: 1.2em; font-weight: 700; color: #1a120c; background: var(--gold); border: 0; border-radius: 999px; padding: 0.5em 1.8em; cursor: pointer; letter-spacing: 0.1em; }
+#go:hover { filter: brightness(1.1); }
+
+#bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0, 0, 0, 0.8)); z-index: 10; transition: opacity 0.4s; }
+body.playing:not(.awake) #bar { opacity: 0; }
+#bar button { font: inherit; font-size: 15px; min-width: 38px; height: 34px; color: var(--ink); background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; cursor: pointer; }
+#bar button:hover { background: rgba(255, 255, 255, 0.2); }
+#scrub { flex: 1; min-width: 60px; accent-color: var(--gold); }
+#time { font-variant-numeric: tabular-nums; font-size: 13px; opacity: 0.8; white-space: nowrap; }
+@media (max-width: 520px) { #time { display: none; } #bar { gap: 6px; } }
