@@ -41,21 +41,22 @@ Everything a story needs is data; everything that draws, moves or sounds is shar
 | `js/story/index.js` | the list of episodes for the start screen |
 | `js/models/weapons.js` | detailed weapons: machine gun, shock rod, blade, shoulder launcher, missile, rocket |
 | `js/models/heli.js` | the attack helicopter: rotors, stub wings and pods, chin gun, lights, searchlight |
-| `js/feet.js`, `js/rig.js` | footwork (planted feet, steps, landings, kneeling), leg IK, extra joints, spring follow-through |
+| `js/feet.js`, `js/rig.js` | footwork (planted feet, steps, landings, kneeling), leg IK, arm IK (parries reach for the blade), extra joints, spring follow-through, the kinetic chain (hips first, then chest, arm, wrist) |
 | `js/fx.js`, `js/set.js` | particles and arcs; the street, with dusk, night and dawn skies a story can move between (`set.sky`) |
 | `engine/` | Iron Front's renderer, copied unchanged: the wanzer models (`mech3d.js`), materials, three.js r160 |
-| `tools/cues.mjs`, `tools/mix.py` | the soundtrack: every cue, step and thruster burn exported from the story, then mixed from real recordings and an orchestra |
+| `tools/cues.mjs`, `tools/voices.py`, `tools/mix.py` | the soundtrack: every cue, step and thruster burn exported from the story; every line spoken by its character's neural voice, in both languages; then mixed from real recordings, an orchestra and the voices (a cockpit, a radio, a helmet mic), the rest stepping back while someone speaks; one soundtrack per language |
 
 ### A new episode
 
 1. Copy `js/story/ep2.js` to `js/story/ep3.js` and change it: actors (`who` is a character id), their `track` of
    moves, `shots`, `lines`, `cues`, `music`, `LEN`.
-2. `node tools/cues.mjs ep3 > tools/cues.json`, then `python -P tools/mix.py RAW KN FIRE VSCO HELI` → `audio/ep3.mp3`.
+2. `node tools/cues.mjs ep3 > tools/cues_ep3.json`, `python tools/voices.py cues_ep3.json`, then `python -P tools/mix.py RAW KN FIRE VSCO HELI cues_ep3.json` → `audio/ep3.zh.mp3`, `audio/ep3.en.mp3`.
 3. Add it to `js/story/index.js`; open `?ep=ep3`.
 
 ### A new character
 
-Add an entry to `js/cast/characters.js`: a wanzer with its Iron Front parts (`engine/data.js` ids), paint and
+Add an entry to `js/cast/characters.js`: a voice in each language (an Edge neural voice, pitch, speed, and `cockpit`,
+`radio` or `helmet`), and a wanzer with its Iron Front parts (`engine/data.js` ids), paint and
 weapons (`mg`, `rifle`, `shotgun`, `rod`, `blade`, `greatblade`, `shield`, `launcher`, `swarm`), or a helicopter with its paint. Then use its id as `who` in a story.
 
 ### A new move or weapon
@@ -64,6 +65,9 @@ A move is one entry in `ACT` (`js/core/actions.js`) with `move`, `pose` and/or `
 `js/models/weapons.js` returning its group and named points; add it to `BUILD` in `js/core/actors3d.js`.
 
 ## Sound
+
+Voices: Microsoft Edge neural text-to-speech (through the `edge-tts` package), one voice per character and language.
+
 
 All CC0 (public domain):
 - [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library) — the guns (an AK-47, single shots cut from a recording and pitched down; deeper still for the helicopter's cannon)

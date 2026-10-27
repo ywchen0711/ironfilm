@@ -8,8 +8,8 @@
 // Cue kinds: shot, missile, explosion, hit, ground, clash, flares, loose, fire, arc, sparks, smoke, flash, shake,
 // and sound-only kinds (whoosh, snd), which the director ignores.
 import * as THREE from '../../engine/lib/three.module.min.js';
-import { missileModel } from '../models/weapons.js?v=4';
-import { H, S, imp } from './util.js?v=4';
+import { missileModel } from '../models/weapons.js?v=5';
+import { H, S, imp } from './util.js?v=5';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const FIXED = new Set(['explosion', 'hit', 'ground', 'clash', 'flares', 'sparks', 'fire', 'column', 'pod']);
@@ -47,8 +47,32 @@ export function createDirector({ scene, fx, rt, views }) {
     }
   }
 
+  // swing trails: where each blade and rod has been over the last few frames (while playing forward)
+  const trails = new Map(); let lastT = -1;
+  const MELEE = new Set(['blade', 'greatblade', 'rod']);
+  function swingTrails(t) {
+    const fresh = t < lastT || t - lastT > 0.1; lastT = t;
+    for (const v of Object.values(views)) {
+      if (v.kind !== 'wanzer') continue;
+      for (const slot of ['wL', 'wR']) {
+        const w = v.weap[slot]; if (!w || !MELEE.has(w.type)) continue;
+        const key = v.A.id + slot; let h = trails.get(key); if (!h || fresh) { h = []; trails.set(key, h); }
+        const st = rt.state(v.A.id, t); if (st.gone[slot] || st.hidden || (slot === 'wR' ? st.hp.armR : st.hp.armL) <= 0) { h.length = 0; continue; }
+        const tip = v.points['tip' + slot[1]](), base = v.points['hand' + slot[1]]();
+        h.push({ t, tip, base }); while (h.length && t - h[0].t > 0.13) h.shift();
+        const col = w.type === 'rod' ? [0.45, 0.8, 1] : w.type === 'greatblade' ? [1, 0.55, 0.45] : [1, 0.85, 0.7];
+        for (let i = h.length - 1; i > 0; i--) {
+          const a = h[i], b = h[i - 1], speed = a.tip.distanceTo(b.tip) / Math.max(1e-3, a.t - b.t); if (speed < 6) continue;
+          const age = (t - b.t) / 0.13, k = Math.min(1, (speed - 6) / 10) * (1 - age);
+          for (let j = 0; j <= 6; j++) { const q = 0.35 + j * 0.11, p = b.base.clone().lerp(b.tip, q).lerp(a.base.clone().lerp(a.tip, q), 0.5); fx.glow.put(p.x, p.y, p.z, 0.06 + 0.05 * q, ...col, 0.35 * k * q); }
+        }
+      }
+    }
+  }
+
   function render(t, focus) {
     fx.begin();
+    swingTrails(t);
     const story = rt.story, SET = story.set || {};
     // the world burning around them
     for (const [i, f] of (SET.fires || []).entries()) fx.fire(t, V(...f.at), f.k ?? 1, 70 + i * 13);

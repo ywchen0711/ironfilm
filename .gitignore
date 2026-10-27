@@ -1,2 +1,5 @@
 tools/*.wav
 node_modules/
+tools/voice_cache/
+tools/voices_*.json
+tools/voicelog_*.txt

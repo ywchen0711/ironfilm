@@ -4,10 +4,10 @@
 //   heli:   body, chest, gun, podL, podR, spot
 import * as THREE from '../../engine/lib/three.module.min.js';
 import { buildMech } from '../../engine/mech3d.js?v=16';
-import { CHARACTERS } from '../cast/characters.js?v=4';
-import * as W from '../models/weapons.js?v=4';
-import { buildHeli } from '../models/heli.js?v=4';
-import * as rig from '../rig.js?v=4';
+import { CHARACTERS } from '../cast/characters.js?v=5';
+import * as W from '../models/weapons.js?v=5';
+import { buildHeli } from '../models/heli.js?v=5';
+import * as rig from '../rig.js?v=5';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const world = (o, x = 0, y = 0, z = 0) => { o.updateWorldMatrix(true, false); return V(x, y, z).applyMatrix4(o.matrixWorld); };
@@ -45,11 +45,11 @@ function wanzer(scene, A, C, rt) {
   return {
     kind: 'wanzer', A, C, m, u, weap, points: P, looseOf, frames,
     sm: null, bake() { this.sm = rig.bake(m, (t) => { const s = rt.state(A.id, t); return { pose: s.pose, u: { ...u, hp: s.hp } }; }, rt.story.LEN); this.feet = rt.feet(A.id); },
-    pose(t, s, other) {
+    pose(t, s, other, aimAt, resolve) {
       const p = rt.pos(A.id, t);
       holder.visible = !s.hidden; holder.position.set(p.x, p.y - s.sink, p.z); holder.rotation.y = rt.yaw(A.id, t); m.group.rotation.x = s.tilt;
       u.hp = s.hp;
-      rig.apply(m, u, { t, s, sm: this.sm.at(t), nodes: this.sm.nodes, CH: rig.CH, feet: this.feet.at(t), yaw: holder.rotation.y, other, ph: A.i * 2 });
+      rig.apply(m, u, { t, s, sm: this.sm.at(t), nodes: this.sm.nodes, CH: rig.CH, feet: this.feet.at(t), yaw: holder.rotation.y, other, ph: A.i * 2, resolve });
       if (m.parts.muzzlewR?.flash) m.parts.muzzlewR.flash.visible = false; // the director draws a better flash
       for (const [slot, w] of Object.entries(weap)) { w.group.visible = !s.gone[slot]; w.update?.(t, w.type === 'rod' ? s.rod : 1); }
       m.mats.eye.color.set(s.dead ? '#200a08' : C.eye);

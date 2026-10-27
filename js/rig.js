@@ -8,7 +8,7 @@
 //     The springs are run once over the whole film at load, so any frame still stands on its own.
 import * as THREE from '../engine/lib/three.module.min.js';
 import { poseMech } from '../engine/mech3d.js?v=16';
-import { LEG } from './feet.js?v=4';
+import { LEG } from './feet.js?v=5';
 
 const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const HZ = 60;
@@ -50,7 +50,11 @@ export function bake(m, poseAt, len) {
     let x = raw[c][0], v = 0; const sub = 4, dt = 1 / HZ / sub;
     for (let i = 0; i < N; i++) { const target = raw[c][i]; for (let s = 0; s < sub; s++) { v += (w * w * (target - x) - 2 * z * w * v) * dt; x += v * dt; } out[c][i] = x; }
   });
-  return { at: (t) => { const q = cl(t * HZ, 0, N - 1.001), i = Math.floor(q), f = q - i; return out.map((a) => a[i] + (a[i + 1] - a[i]) * f); }, nodes };
+  // the kinetic chain: the hips move a beat before the chest, the chest before the arm, the wrist last, like a whip;
+  // the head trails a touch behind the body
+  const LEAD = CH.map(([path, , k]) => (path === 'hips' ? 0.06 : path === 'torso' ? 0.03 : path === 'head' ? -0.03 : path.endsWith('.el') ? -0.015 : path.startsWith('parts.hand') ? -0.03 : 0));
+  const read = (a, t) => { const q = cl(t * HZ, 0, N - 1.001), i = Math.floor(q), f = q - i; return a[i] + (a[i + 1] - a[i]) * f; };
+  return { at: (t) => out.map((a, c) => read(a, t + LEAD[c])), nodes };
 }
 
 // ---------------------------------------------------------------- one frame
@@ -73,7 +77,20 @@ function solveLeg(L, local, hipPos, relYaw, footPitch, limp) {
   return A;
 }
 
-// o: { t, s (cast state), sm (smoothed channels), feet (planner frame), yaw (world), other (the other machine's head, world) }
+// an arm reaching for a point in the world (a parry meeting the blade): shoulder out, upper arm forward, elbow bent
+const A1 = 0.18, A2 = 0.32;
+function solveArm(m, A, target, w) {
+  const k = A.sh.scale.x || 1, T = m.torso.worldToLocal(target.clone());
+  const base = A.sh.position.clone().add(new THREE.Vector3(0, -0.06 * k, 0)), v = T.sub(base).divideScalar(k);
+  const az = Math.atan2(v.x, -v.y), r = Math.hypot(v.x, v.y), z = v.z, D = cl(Math.hypot(r, z), 0.1, A1 + A2 - 0.005);
+  const bend = Math.PI - Math.acos(cl((A1 * A1 + A2 * A2 - D * D) / (2 * A1 * A2), -1, 1));
+  const th = Math.atan2(z, r) - Math.acos(cl((A1 * A1 + D * D - A2 * A2) / (2 * A1 * D), -1, 1)) * 0.6;
+  A.sh.rotation.z += (cl(az, -0.9, 0.9) - A.sh.rotation.z) * w;
+  A.up.rotation.x += (-th - A.up.rotation.x) * w;
+  A.el.rotation.x += (-bend - A.el.rotation.x) * w;
+}
+
+// o: { t, s (cast state), sm (smoothed channels), feet (planner frame), yaw (world), other (the other machine's head, world), resolve }
 export function apply(m, u, o) {
   const { t, s, feet } = o;
   // the engine's pose first (materials, broken parts, the muzzle flash, the eye), then the smoothed joints over it
@@ -111,6 +128,8 @@ export function apply(m, u, o) {
     A.sh.rotation.z += side * (0.05 + 0.16 * up);
     A.sh.position.y = A.shBase.y + 0.025 * up;
   }
+  // ---- parries: the arm goes to meet the blade
+  if (s.ik && o.resolve) { m.torso.updateWorldMatrix(true, false); for (const k of s.ik) { const tg = o.resolve(k.to, t); if (tg) solveArm(m, k.side === 'R' ? m.armR : m.armL, tg, cl(k.w)); } }
   // ---- the head watches the other machine (through the chest's turn), on top of what the pose asks
   if (o.other && !s.dead) {
     m.head.updateWorldMatrix(true, false); m.torso.updateWorldMatrix(true, false);

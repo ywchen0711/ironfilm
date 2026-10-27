@@ -1,7 +1,8 @@
 """The soundtrack of an episode: real recordings and a real orchestra, mixed to the episode's own cues.
 
     node tools/cues.mjs ep1 > tools/cues.json              # every cue, step, thruster burn and flight path, from the story
-    python -P tools/mix.py RAW KN FIRE VSCO HELI            # -> audio/ep1.mp3
+    python tools/voices.py cues.json                       # the spoken lines, both languages (tools/voices_ep1.json)
+    python -P tools/mix.py RAW KN FIRE VSCO HELI [cues.json] # -> audio/ep1.zh.mp3 and audio/ep1.en.mp3
 
 Nothing here belongs to one story: each kind of cue has its sound (SOUNDS below), the music is played from the
 episode's cue sheet (story.music), the helicopter's rotor follows its flight.
@@ -23,7 +24,7 @@ from scipy.ndimage import minimum_filter1d, uniform_filter1d
 SR = 48000
 RAW, KN, FIRE, VSCO, HELI = sys.argv[1:6]
 HERE = os.path.dirname(os.path.abspath(__file__))
-CUE = json.load(open(os.path.join(HERE, 'cues.json'), encoding='utf-8'))
+CUE = json.load(open(os.path.join(HERE, sys.argv[6] if len(sys.argv) > 6 else 'cues_ep1.json'), encoding='utf-8'))
 LEN, EP = CUE['LEN'], CUE['ep']
 FILM = CUE.get('filmLen', LEN)
 rng = np.random.default_rng(7)
@@ -33,15 +34,15 @@ N = int((FILM + 1.5) * SR)
 WARP = CUE.get('warp', [])
 def to_film(tw):
     f = w = 0.0
-    for a, b, r in WARP:
+    for a, b, r, *_ in WARP:
         if tw <= a: return f + (tw - w)
         f += a - w; w = a
         if tw <= b: return f + (tw - a) / r
         f += (b - a) / r; w = b
     return f + (tw - w)
-def rate_at(tw):
-    for a, b, r in WARP:
-        if a <= tw < b: return r
+def rate_at(tw):  # slow motion only: a hit-stop ('stop') freezes the picture, not the sound
+    for a, b, r, *flag in WARP:
+        if a <= tw < b and not flag: return r
     return 1.0
 
 # ---------------------------------------------------------------- loading and shaping
@@ -303,16 +304,50 @@ if os.environ.get('STEMS'):
 # the music steps back under the loudest moments
 env = uniform_filter1d(np.abs(sfx).max(axis=1), int(0.05 * SR))
 duck = uniform_filter1d(1 / (1 + np.clip(env - 0.25, 0, None) * 1.2), int(0.2 * SR))
-mix = sfx + music * db(-4) * duck[:, None] + BUS['amb'] + reverb(BUS['verb']) * db(-6)
-mix = filt(mix, 'highpass', 28)
-tt = np.arange(N) / SR; mix *= np.clip(tt / 0.6, 0, 1)[:, None] * np.clip((FILM + 0.6 - tt) / 1.2, 0, 1)[:, None]
-# level: the loudest few moments (the top 0.05 % of samples) at -1 dB; a look-ahead limiter catches what is above
-peak = np.abs(mix).max(axis=1); mix *= db(-1) / max(1e-6, float(np.percentile(peak, 99.95))); peak = np.abs(mix).max(axis=1)
-look = int(0.004 * SR)
-g = minimum_filter1d(np.minimum(1, db(-1) / np.maximum(peak, 1e-6)), size=2 * look + 1)
-g = uniform_filter1d(minimum_filter1d(g, size=int(0.02 * SR)), size=int(0.02 * SR))
-mix = np.clip(mix * g[:, None], -db(-0.5), db(-0.5))[:int((FILM + 0.6) * SR)]
+VERB = reverb(BUS['verb'])
+
+# ---------------------------------------------------------------- the voices, one mix per language
+def voice_fx(x, fx):
+    x = filt(x, 'highpass', 110)
+    if fx == 'radio':  # a radio: narrow, a little driven, with hiss under it and a squelch either end
+        x = filt(filt(x, 'highpass', 320, 4), 'lowpass', 3300, 4); x = np.tanh(x * 3.0) / 3.0
+        hiss = filt(rng.normal(0, 1, x.shape).astype(np.float32), 'bandpass', [1500, 6000]) * 0.012; x = x + hiss
+    elif fx == 'helmet': x = filt(x, 'lowpass', 5200); x = np.tanh(x * 2.0) / 2.0
+    else:  # in a cockpit: close, a touch of presence, a small hard room
+        x = filt(x, 'lowpass', 7800); x = x + filt(x, 'bandpass', [2200, 4200]) * 0.35; x = np.tanh(x * 1.4) / 1.4
+    return x
+def room(x, secs=0.35):
+    n = int(secs * SR); t = np.arange(n) / SR; ir = rng.normal(0, 1, (n, 2)).astype(np.float32) * np.exp(-t * 18)[:, None]; ir[0] = 1.5; ir /= np.sqrt((ir ** 2).sum(axis=0))
+    return np.stack([fftconvolve(x[:, c], ir[:, c])[:len(x)] for c in range(2)], axis=1).astype(np.float32)
+VOICES = os.path.join(HERE, f'voices_{EP}.json')
+LANGS = json.load(open(VOICES, encoding='utf-8')) if os.path.exists(VOICES) else {'zh': [], 'en': []}
 out = os.path.join(HERE, '..', 'audio'); os.makedirs(out, exist_ok=True)
-wav = os.path.join(HERE, f'{EP}.wav'); sf.write(wav, mix, SR, subtype='PCM_24')
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libmp3lame', '-q:a', '1' if FILM < 90 else '3', os.path.join(out, f'{EP}.mp3')], check=True)
-print(EP, 'film', round(FILM, 1), 'peak', round(float(np.abs(mix).max()), 3), 'rms dB', round(float(20 * np.log10(np.sqrt((mix ** 2).mean()))), 1), 'secs', len(mix) / SR)
+# how long each line really takes to say, so the player keeps its subtitle up until it has been said
+json.dump({lang: [[round(L['t'] - 0.04, 3), round(L['dur'], 3)] for L in lines] for lang, lines in LANGS.items()}, open(os.path.join(out, f'{EP}.lines.json'), 'w'))
+for lang, lines in LANGS.items():
+    dlg = np.zeros((N, 2), np.float32)
+    for L in lines:
+        x = load(L['file']); x = x / max(1e-6, float(np.sqrt((x ** 2).mean()))) * 0.11 * (1.25 if L['loud'] else 1.0)
+        x = voice_fx(x, L['fx'])
+        if L['fx'] == 'radio':
+            sq = filt(K('computerNoise'), 'highpass', 1500)[:int(0.12 * SR)] * 0.25
+            x = np.concatenate([sq, x, sq[::-1]]); start = to_film(L['t']) - 0.12
+        else: x = room(x) * 0.85 + x * 0.15; start = to_film(L['t'])
+        i = max(0, int(start * SR)); n = min(len(x), N - i)
+        dlg[i:i + n] += pan(x[:n], 0.0)
+    # everything else steps back while someone is speaking
+    venv = uniform_filter1d(np.abs(dlg).max(axis=1), int(0.08 * SR)); speak = np.clip(venv / 0.05, 0, 1)
+    speak = uniform_filter1d(speak, int(0.3 * SR))  # ease in and out of the ducking
+    mduck = 1 - 0.65 * speak; sduck = 1 - 0.35 * speak
+    mix = sfx * sduck[:, None] + music * db(-4) * (duck * mduck)[:, None] + BUS['amb'] * sduck[:, None] + VERB * db(-6) + dlg
+    mix = filt(mix, 'highpass', 28)
+    tt = np.arange(N) / SR; mix *= np.clip(tt / 0.6, 0, 1)[:, None] * np.clip((FILM + 0.6 - tt) / 1.2, 0, 1)[:, None]
+    # level: the loudest few moments (the top 0.05 % of samples) at -1 dB; a look-ahead limiter catches what is above
+    peak = np.abs(mix).max(axis=1); mix *= db(-1) / max(1e-6, float(np.percentile(peak, 99.95))); peak = np.abs(mix).max(axis=1)
+    look = int(0.004 * SR)
+    g = minimum_filter1d(np.minimum(1, db(-1) / np.maximum(peak, 1e-6)), size=2 * look + 1)
+    g = uniform_filter1d(minimum_filter1d(g, size=int(0.02 * SR)), size=int(0.02 * SR))
+    mix = np.clip(mix * g[:, None], -db(-0.5), db(-0.5))[:int((FILM + 0.6) * SR)]
+    wav = os.path.join(HERE, f'{EP}.{lang}.wav'); sf.write(wav, mix, SR, subtype='PCM_24')
+    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libmp3lame', '-q:a', '1' if FILM < 90 else '3', os.path.join(out, f'{EP}.{lang}.mp3')], check=True)
+    print(EP, lang, len(lines), 'lines', 'film', round(FILM, 1), 'peak', round(float(np.abs(mix).max()), 3), 'rms dB', round(float(20 * np.log10(np.sqrt((mix ** 2).mean()))), 1))

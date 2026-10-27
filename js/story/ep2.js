@@ -82,6 +82,7 @@ export default {
         { do: 'blow', t: 93.6, style: 'upper', arm: 'L', result: 'clash', target: 'halden', against: 'tipR', close: false },
         { do: 'guard', t: 93.95, t1: 95.0, side: 'L', arm: BLOCK },
         { do: 'react', t: 95.1, part: 'body', k: 1.0 }, { do: 'dist', t: 95.1, t1: 95.6, d: 0.6 },
+        { do: 'goto', t: 96.2, t1: 97.6, to: { rel: 'halden', at: 96.19, off: [-2.0, -1.7] } }, // away from Karl, into open ground
         { do: 'lookat', t: 99.5, t1: 104.8, to: 'mia' },
         // fight two: overwhelmed, thrown down
         { do: 'guard', t: 106.0, t1: 110.2, side: 'L', arm: BLOCK },
@@ -196,8 +197,8 @@ export default {
         { do: 'face', t: 97.4, t1: 104, to: 'mia', blend: 0.4 },
         { do: 'swarm', t: T.swarm1, n: 16, rate: 0.06, target: 'mia', at: 101.2, decoys: 10 },
         // fight two: Ron beaten down, Karl knocked aside
-        { do: 'charge', t: 105.5, t1: 106.8, to: 'ron', gap: 1.1 },
-        { do: 'anchor', t: 106.8, t1: 110.15, to: 'ron', dist: 1.1, blend: 0.05 }, { do: 'pin', t: 110.15 },
+        { do: 'charge', t: 105.5, t1: 106.8, to: 'ron', gap: 1.4 },
+        { do: 'anchor', t: 106.8, t1: 110.15, to: 'ron', dist: 1.4, blend: 0.05 }, { do: 'pin', t: 110.15 },
         { do: 'blow', t: 107.0, style: 'side', result: 'clash', target: 'ron', against: 'tipL' },
         { do: 'blow', t: 107.8, style: 'thrust', result: 'hit', target: 'ron', part: 'chest' },
         { do: 'blow', t: 108.6, style: 'over', result: 'clash', target: 'ron', against: 'tipL', lean: 0.2 },
@@ -226,8 +227,8 @@ export default {
         { do: 'move', t: 182.3, t1: 182.9, d: [0.3, 1.3] }, { do: 'jets', t: 182.2, t1: 183.0, shape: 'bump' },
         { do: 'swarm', t: 184.0, n: 8, rate: 0.06, target: 'hound', at: 186.0, decoys: 8 },
         { do: 'swarm', t: 184.5, n: 8, rate: 0.06, target: 'ron', at: 186.3, decoys: 8 },
-        { do: 'charge', t: 186.2, t1: 187.4, to: 'ron', gap: 1.1 },
-        { do: 'anchor', t: 187.4, t1: 193.4, to: 'ron', dist: 1.1, blend: 0.05 }, { do: 'pin', t: 193.4 },
+        { do: 'charge', t: 186.2, t1: 187.4, to: 'ron', gap: 1.35 },
+        { do: 'anchor', t: 187.4, t1: 193.4, to: 'ron', dist: 1.35, blend: 0.05 }, { do: 'pin', t: 193.4 },
         { do: 'face', t: 189.8, t1: 192.0, to: 'hound', blend: 0.25 },
         { do: 'react', t: 189.9, part: 'body', k: 1.0 },
         { do: 'blow', t: 190.8, style: 'over', arm: 'L', result: 'clash', target: 'hound', against: 'tipL', close: false },

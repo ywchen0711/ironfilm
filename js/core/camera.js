@@ -8,7 +8,7 @@
 //   { mid: ['ron', 'hound'], off }           halfway between two actors
 //   { fixed: 'ron', time: 23.2, off }        where an actor was at a given moment (the camera stays put)
 import * as THREE from '../../engine/lib/three.module.min.js';
-import { ss, cl } from './util.js?v=4';
+import { ss, cl } from './util.js?v=5';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export function createCamera(story, rt, resolve) {

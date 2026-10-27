@@ -6,24 +6,25 @@
 //   the camera (core/camera.js)     for the shot
 // Nothing in here belongs to one story.
 import * as THREE from '../engine/lib/three.module.min.js';
-import { buildSet, FOG, skyAt } from './set.js?v=4';
-import { buildProps } from './props.js?v=4';
-import { makeClock } from './core/time.js?v=4';
-import { EPISODES } from './story/index.js?v=4';
-import { FX } from './fx.js?v=4';
-import { createRuntime } from './core/runtime.js?v=4';
-import { buildActors } from './core/actors3d.js?v=4';
-import { createDirector } from './core/director.js?v=4';
-import { createCamera } from './core/camera.js?v=4';
-import { nameOf } from './cast/characters.js?v=4';
-import { seg } from './core/util.js?v=4';
-import * as score from './score.js?v=4';
+import { buildSet, FOG, skyAt } from './set.js?v=5';
+import { buildProps } from './props.js?v=5';
+import { makeClock } from './core/time.js?v=5';
+import { EPISODES } from './story/index.js?v=5';
+import { FX } from './fx.js?v=5';
+import { createRuntime } from './core/runtime.js?v=5';
+import { buildActors } from './core/actors3d.js?v=5';
+import { createDirector } from './core/director.js?v=5';
+import { createCamera } from './core/camera.js?v=5';
+import { nameOf } from './cast/characters.js?v=5';
+import { seg } from './core/util.js?v=5';
+import * as score from './score.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const params = new URLSearchParams(location.search);
 const EP = /^[a-z0-9]+$/.test(params.get('ep') || '') ? params.get('ep') : 'ep1';
-const story = (await import(`./story/${EP}.js?v=4`)).default, clock = makeClock(story), LEN = clock.filmLen; // LEN: the film's length (slow motion included)
+const story = (await import(`./story/${EP}.js?v=5`)).default, rt = createRuntime(story);
+const clock = makeClock({ ...story, warp: rt.warp }), LEN = clock.filmLen; // LEN: the film's length (slow motion and hit-stops included)
 let lang = params.get('lang') === 'en' ? 'en' : (() => { try { return localStorage.getItem('ironfilm.lang') || 'zh'; } catch (e) { return 'zh'; } })();
 
 // ---------------------------------------------------------------- the stage
@@ -49,7 +50,6 @@ const props = buildProps(scene, story.set?.props);
 const fx = new FX(scene);
 
 // ---------------------------------------------------------------- the story and its actors
-const rt = createRuntime(story);
 const views = buildActors(scene, rt);
 for (const v of Object.values(views)) v.bake(); // footwork and springs, once for the whole film
 const director = createDirector({ scene, fx, rt, views });
@@ -64,7 +64,7 @@ const aimOf = (A, t) => { let spec = null; for (const [ta, s] of A.aim || []) if
 function poseAll(t) {
   for (const v of Object.values(views)) {
     const s = rt.state(v.A.id, t); s.t = t;
-    v.pose(t, s, watched(v.A, s), v.kind === 'heli' ? aimOf(v.A, t) : null);
+    v.pose(t, s, watched(v.A, s), v.kind === 'heli' ? aimOf(v.A, t) : null, director.resolve);
   }
   scene.updateMatrixWorld();
 }
@@ -104,6 +104,12 @@ function frame(tf) {
 }
 
 // ---------------------------------------------------------------- words and fades over the picture
+// a subtitle stays up until its line has been spoken (audio/<ep>.lines.json, from the sound mix), but never into the next
+let spoken = null; fetch(`audio/${story.id}.lines.json?v=5`).then((r) => r.json()).then((j) => { spoken = j; }).catch(() => {});
+function endOf(a, b) {
+  const said = spoken?.[lang]?.find(([s]) => Math.abs(s - a) < 0.01); if (!said) return b;
+  const next = story.lines[lang].find(([n]) => n > a + 0.01); return Math.max(b, Math.min(said[0] + said[1] + 0.25, next ? next[0] - 0.05 : 1e9));
+}
 function overlays(t, flash, tf) {
   const SL = story.LEN, fade = Math.max(1 - seg(tf, 0, 0.8), seg(tf, LEN - 0.8, LEN), story.blacks ? Math.max(0, ...story.blacks.map(([a, b]) => Math.min(seg(t, a, a + 0.5), 1 - seg(t, b - 0.5, b)))) : 0);
   $('fade').style.opacity = fade.toFixed(3); $('flash').style.opacity = flash.toFixed(3);
@@ -111,8 +117,8 @@ function overlays(t, flash, tf) {
   $('title').style.opacity = tk.toFixed(3); $('title').innerHTML = `<b>${tt[0]}</b><i>${tt[1]}</i><small>${tt[2]}</small>`;
   const ek = Math.min(seg(t, SL - (story.endFor || 1.7), SL - (story.endFor || 1.7) + 0.7), 1 - seg(t, SL - 0.4, SL));
   $('end').style.opacity = ek.toFixed(3); $('end').innerHTML = `<b>${story.end[lang][0]}</b><small>${story.end[lang][1]}</small>`;
-  const L = story.lines[lang].find(([a, b]) => t >= a && t < b), sub = $('sub');
-  if (L) { const k = Math.min(seg(t, L[0], L[0] + 0.15), 1 - seg(t, L[1] - 0.15, L[1])); sub.style.opacity = k.toFixed(3); const html = `<span class="who">${nameOf(L[2], lang)}</span>${L[3]}`; if (sub.dataset.html !== html) { sub.innerHTML = html; sub.dataset.html = html; } }
+  const L = story.lines[lang].find(([a, b]) => t >= a && t < endOf(a, b)), sub = $('sub');
+  if (L) { const e = endOf(L[0], L[1]), k = Math.min(seg(t, L[0], L[0] + 0.15), 1 - seg(t, e - 0.15, e)); sub.style.opacity = k.toFixed(3); const html = `<span class="who">${nameOf(L[2], lang)}</span>${L[3]}`; if (sub.dataset.html !== html) { sub.innerHTML = html; sub.dataset.html = html; } }
   else sub.style.opacity = '0';
 }
 
@@ -160,7 +166,7 @@ $('scrub').max = String(LEN);
 $('go').onclick = play;
 $('pp').onclick = () => (state.playing ? pause() : play());
 $('scrub').oninput = (e) => seek(+e.target.value);
-$('lang').onclick = () => { lang = lang === 'zh' ? 'en' : 'zh'; try { localStorage.setItem('ironfilm.lang', lang); } catch (e) { /* ignore */ } texts(); frame(state.t); };
+$('lang').onclick = () => { lang = lang === 'zh' ? 'en' : 'zh'; try { localStorage.setItem('ironfilm.lang', lang); } catch (e) { /* ignore */ } texts(); frame(state.t); score.setSource(soundOf()); score.load(); if (state.playing) seek(state.t); };
 $('mute').onclick = () => { score.setMuted(!score.isMuted()); $('mute').textContent = score.isMuted() ? '🔇' : '🔊'; };
 $('fs').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); };
 window.addEventListener('keydown', (e) => {
@@ -170,7 +176,8 @@ window.addEventListener('keydown', (e) => {
 // the controls show while the mouse moves
 let idle = 0; window.addEventListener('pointermove', () => { document.body.classList.add('awake'); clearTimeout(idle); idle = setTimeout(() => document.body.classList.remove('awake'), 2200); });
 
-score.setSource(`audio/${story.id}.mp3?v=4`);
+const soundOf = () => `audio/${story.id}.${lang}.mp3?v=5`; // a soundtrack per language: the voices are in it
+score.setSource(soundOf());
 layout(); texts(); frame(state.t); bar(); loop(); score.load();
 $('loading').remove(); $('go').hidden = false;
 if (state.t > 0) $('start').hidden = true;

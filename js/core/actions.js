@@ -5,22 +5,31 @@
 //   pose(s, t, a, W)    how it poses the actor (s.pose = the engine's pose parameters, plus s.jets, s.rod, s.hp, ...)
 //   cues(a, W)          what it sets off: effects and sounds, as timed cues (see core/runtime.js and core/director.js)
 // W gives the time-bound world: W.pos(id, t) another actor's place, W.T the story's beats, W.self the actor.
-import { cl, seg, ss, S, bump, imp, lerp, ease, shape, spline, H } from './util.js?v=4';
+import { cl, seg, ss, S, bump, imp, lerp, ease, shape, spline, H } from './util.js?v=5';
 
 const REST = { s: -0.5, e: -0.9 };
 const mixArm = (a, b, k) => ({ s: a.s + (b.s - a.s) * k, e: a.e + (b.e - a.e) * k });
 const dirOf = (a, b) => { const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1; return { x: dx / l, z: dz / l }; };
 // a blow's five beats: close in, wind up and hold, strike, follow through, step back
 export const closeIn = (t, te) => { const dt = t - te; return ss(cl((dt + 0.9) / 0.55)) * (1 - ss(cl((dt - 0.3) / 0.45))); };
-const blowArm = (style, dt, lean = 0) => {
-  const wu = cl((dt + 0.32) / 0.24), st = cl((dt + 0.07) / 0.09), back = 1 - ss(cl((dt - 0.3) / 0.45));
-  const two = (bk, hit) => mixArm(REST, st > 0 ? mixArm(bk, hit, st) : mixArm(REST, bk, wu), back);
-  const o = { twist: 0, lean: 0, crouch: 0, wrist: 0, arm: REST, tw: Math.max(wu, st) * back };
-  if (style === 'side') { o.twist = st > 0 ? 1.0 - 1.9 * st : 0.3 + 0.7 * wu; o.arm = two({ s: -1.45, e: -0.25 }, { s: -1.45, e: -0.15 }); o.wrist = 1.2 * wu * back; }
-  else if (style === 'thrust') { o.twist = st > 0 ? 0.45 - 0.7 * st : 0.3 + 0.15 * wu; o.arm = two({ s: -0.15, e: -1.9 }, { s: -1.6, e: 0 }); o.lean = 0.15 * st * back; o.wrist = 1.5 * Math.max(wu, st) * back; }
-  else if (style === 'upper') { o.arm = two({ s: 0.35, e: -0.5 }, { s: -2.5, e: -0.45 }); o.crouch = 0.6 * wu * (1 - st); o.lean = -0.15 * st * back; o.wrist = -0.8 * st * back; }
-  else { o.arm = two({ s: -2.8, e: -0.3 }, { s: lean > 0.2 ? -0.25 : -0.6, e: -0.2 }); o.lean = (0.1 + lean) * st * back; o.crouch = lean * st * back; }
-  return o;
+// A blow, with the whole body. Each style has three poses: the wind-up (weight back, the free arm up on guard), the
+// strike (weight driving forward, the body sinking into it, the free arm pulled back to balance it) and the follow-
+// through; the body eases back to rest afterwards. Every blow has its own speed (a.speed, or a little random), so a
+// run of them never ticks like a metronome.
+const STYLE = {
+  side: { W: { arm: { s: -1.45, e: -0.3 }, off: { s: -0.9, e: -1.3 }, twist: 0.85, lean: -0.06, crouch: 0.12, roll: 0.06, wrist: 1.2 }, S: { arm: { s: -1.45, e: -0.15 }, off: { s: 0.25, e: -0.5 }, twist: -0.75, lean: 0.16, crouch: 0.28, roll: -0.08, wrist: 1.2 }, F: { twist: -1.0, lean: 0.1, crouch: 0.2, roll: -0.05 } },
+  over: { W: { arm: { s: -2.8, e: -0.4 }, off: { s: -1.3, e: -0.9 }, twist: 0.25, lean: -0.12, crouch: 0.05, headKick: -0.15, wrist: 0 }, S: { arm: { s: -0.6, e: -0.2 }, off: { s: 0.3, e: -0.4 }, twist: -0.1, lean: 0.22, crouch: 0.32, headKick: 0.1, wrist: 0 }, F: { lean: 0.15, crouch: 0.25 } },
+  thrust: { W: { arm: { s: -0.15, e: -1.9 }, off: { s: -1.0, e: -1.2 }, twist: 0.55, lean: -0.1, crouch: 0.15, wrist: 1.5 }, S: { arm: { s: -1.6, e: 0 }, off: { s: 0.35, e: -0.3 }, twist: -0.35, lean: 0.25, crouch: 0.3, wrist: 1.5 }, F: { twist: -0.45, lean: 0.18, crouch: 0.22 } },
+  upper: { W: { arm: { s: 0.35, e: -0.5 }, off: { s: -0.8, e: -1.4 }, twist: 0.4, lean: 0.15, crouch: 0.6, wrist: 0 }, S: { arm: { s: -2.5, e: -0.45 }, off: { s: 0.4, e: -0.3 }, twist: -0.3, lean: -0.15, crouch: 0, headKick: -0.15, wrist: -0.8 }, F: { twist: -0.35, lean: -0.1 } },
+};
+const blowBody = (style, dt, a) => {
+  const P = STYLE[style] || STYLE.over, sp = a.speed ?? 0.88 + 0.3 * H(a.t, 77), mirror = (a.arm || 'R') === 'L' ? -1 : 1;
+  const k1 = ss(cl((dt + 0.36 * sp) / (0.26 * sp))), k2 = ss(cl((dt + 0.08 * sp) / (0.08 * sp))), k3 = ss(cl(dt / 0.18)), back = 1 - ss(cl((dt - 0.3) / 0.45));
+  const val = (k) => { const w = P.W[k] || 0, s2 = P.S[k] ?? w, f = P.F?.[k] ?? s2; return ((w * k1) * (1 - k2) + s2 * k2 * (1 - k3) + f * k2 * k3) * back; };
+  const arm = mixArm(REST, k2 > 0 ? mixArm(P.W.arm, P.S.arm, k2) : mixArm(REST, P.W.arm, k1), back);
+  const off = mixArm(REST, k2 > 0 ? mixArm(P.W.off, P.S.off, k2) : mixArm(REST, P.W.off, k1), back);
+  const lean = (style === 'over' ? a.lean || 0 : 0);
+  return { arm, off, wrist: (k2 > 0 ? P.S.wrist : P.W.wrist * k1) * back, twist: val('twist') * mirror, lean: val('lean') + lean * k2 * back, crouch: val('crouch') + lean * k2 * back, roll: val('roll') * mirror, headKick: val('headKick'), on: Math.max(k1, k2) * back, sp };
 };
 const addP = (s, k, v) => { s.pose[k] = (s.pose[k] || 0) + v; };
 const ref = (actor, part) => `${actor}.${part}`;
@@ -118,10 +127,10 @@ export const ACT = {
     dist(t, a) { return a.close === false ? 0 : -(a.reach ?? 0.55) * closeIn(t, a.t); },
     pose(s, t, a) {
       const dt = t - a.t; if (dt < -0.9 || dt > 0.75) return;
-      const o = blowArm(a.style, dt, a.lean || 0), side = a.arm || 'R';
-      if (dt > -0.32) { s.pose['arm' + side] = o.arm; s.pose['wrist' + side] = o.wrist; }
-      if (a.style === 'side' || a.style === 'thrust') s.pose.twist = lerp(s.pose.twist, o.twist, o.tw);
-      addP(s, 'lean', o.lean); addP(s, 'crouch', o.crouch);
+      const o = blowBody(a.style, dt, a), side = a.arm || 'R', other = side === 'R' ? 'L' : 'R';
+      if (dt > -0.36 * o.sp) { s.pose['arm' + side] = o.arm; s.pose['wrist' + side] = o.wrist; }
+      if (a.offhand !== false && o.on > 0.01) s.pose['arm' + other] = mixArm(s.pose['arm' + other] || REST, o.off, 0.6 * o.on); // the free arm balances the blow
+      addP(s, 'twist', o.twist); addP(s, 'lean', o.lean); addP(s, 'crouch', o.crouch); addP(s, 'roll', o.roll); addP(s, 'headKick', o.headKick);
     },
     cues(a) {
       const c = [{ t: a.t - 0.16, kind: 'whoosh', k: a.k ?? 1 }], me = a.self, weap = ref(me, 'tip' + (a.arm || 'R'));
@@ -195,6 +204,9 @@ export const ACT = {
     },
   },
   flares: { cues(a) { return [{ t: a.t, kind: 'flares', at: ref(a.self, 'body'), n: a.n ?? 14 }]; } },
+  // an arm reaching out to meet a weapon (solved by IK at draw time, js/rig.js); the runtime adds one to the defender
+  // of every blow that ends in a clash
+  parry: { pose(s, t, a) { const w = shape(t, a.t - (a.lead ?? 0.32), a.t + (a.hold ?? 0.25), 'hold', 0.16); if (w > 0.01) (s.ik ||= []).push({ side: a.side || 'L', to: a.to, w: w * (a.k ?? 1) }); } },
   jets: { pose(s, t, a) { s.jets = Math.max(s.jets, (a.k ?? 1) * shape(t, a.t, a.t1, a.shape || 'hold', 0.08)); } },
   rod: { pose(s, t, a) { s.rod = Math.max(s.rod, (a.k ?? 1) * shape(t, a.t, a.t1, 'hold', 0.5)); } },
   // down on one knee (the feet re-plant for it, js/feet.js)
