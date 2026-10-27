@@ -1,10 +1,11 @@
 // node tools/cues.mjs [ep1] > tools/cues.json — everything the sound mix (tools/mix.py) needs from an episode:
 // its cues (gunshots, blasts, clashes, swings...), every footstep and landing, when the thrusters burn,
 // where the helicopters are, and the music cue sheet
-import { createRuntime } from '../js/core/runtime.js?v=3';
-import { CHARACTERS } from '../js/cast/characters.js?v=3';
+import { createRuntime } from '../js/core/runtime.js?v=4';
+import { CHARACTERS } from '../js/cast/characters.js?v=4';
+import { makeClock } from '../js/core/time.js?v=4';
 const ep = process.argv[2] || 'ep1';
-const story = (await import(`../js/story/${ep}.js?v=3`)).default;
+const story = (await import(`../js/story/${ep}.js?v=4`)).default;
 const rt = createRuntime(story);
 const r2 = (v) => Math.round(v * 1000) / 1000;
 const steps = [], jets = [], helis = [], rods = [];
@@ -32,4 +33,5 @@ for (const A of rt.actors) {
   }
 }
 const cues = rt.cues.map((c) => { const o = { t: r2(c.t), kind: c.kind, by: c.by }; for (const k of ['t1', 'k', 'hit', 'big', 'model', 'boom', 'name', 'bind', 'n']) if (c[k] != null) o[k] = typeof c[k] === 'number' ? r2(c[k]) : c[k]; return o; });
-console.log(JSON.stringify({ ep, LEN: story.LEN, T: story.T, cues, steps: steps.sort((a, b) => a.t - b.t), jets, rods, helis, music: story.music }, null, 1));
+const clock = makeClock(story);
+console.log(JSON.stringify({ ep, LEN: story.LEN, filmLen: clock.filmLen, warp: clock.warp, T: story.T, cues, steps: steps.sort((a, b) => a.t - b.t), jets, rods, helis, music: story.music }, null, 1));

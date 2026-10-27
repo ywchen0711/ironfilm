@@ -8,11 +8,11 @@
 // Cue kinds: shot, missile, explosion, hit, ground, clash, flares, loose, fire, arc, sparks, smoke, flash, shake,
 // and sound-only kinds (whoosh, snd), which the director ignores.
 import * as THREE from '../../engine/lib/three.module.min.js';
-import { missileModel } from '../models/weapons.js?v=3';
-import { H, S, imp } from './util.js?v=3';
+import { missileModel } from '../models/weapons.js?v=4';
+import { H, S, imp } from './util.js?v=4';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
-const FIXED = new Set(['explosion', 'hit', 'ground', 'clash', 'flares', 'sparks', 'fire']);
+const FIXED = new Set(['explosion', 'hit', 'ground', 'clash', 'flares', 'sparks', 'fire', 'column', 'pod']);
 
 export function createDirector({ scene, fx, rt, views }) {
   const cues = rt.cues;
@@ -25,9 +25,11 @@ export function createDirector({ scene, fx, rt, views }) {
       const p = rt.pos(id, t); return V(p.x, p.y, p.z);
     }
     if (spec.part === 'front') return views[spec.actor].points.front(spec.off);
+    // an offset in the part's own frame (x to its left, y up, z ahead): a camera that turns with a head
+    if (spec.local) { const o = views[spec.actor]?.frames?.[spec.part]; if (o) { o.updateWorldMatrix(true, false); return V(...(spec.off || [0, 0, 0])).applyMatrix4(o.matrixWorld); } }
     return resolve(spec.part ? `${spec.actor}.${spec.part}` : spec.actor, t).add(V(...(spec.off || [0, 0, 0])));
   }
-  const pool = { missile: [], rocket: [] };
+  const pool = { missile: [], rocket: [], micro: [] };
   const flying = (kind, i) => { const P = pool[kind]; while (P.length <= i) { const m = missileModel(kind); m.group.visible = false; scene.add(m.group); P.push(m); } return P[i]; };
   const looseObjs = new Map();
 
@@ -56,7 +58,8 @@ export function createDirector({ scene, fx, rt, views }) {
     for (const v of Object.values(views)) {
       const s = rt.state(v.A.id, t);
       if (v.kind === 'wanzer') {
-        if (!s.dead) { const e = v.points.eye(), c = new THREE.Color(v.C.eye); fx.glow.put(e.x, e.y, e.z, 0.05, c.r, c.g, c.b, 0.9); }
+        if (!s.dead) { const e = v.points.eye().add(v.m.head.getWorldDirection(V()).multiplyScalar(0.05)), c = new THREE.Color(v.C.eye); // just in front of the face, so the faceplate never hides it
+          fx.glow.put(e.x, e.y, e.z, 0.07, c.r, c.g, c.b, 1); fx.glow.put(e.x, e.y, e.z, 0.2, c.r, c.g, c.b, 0.25); }
         if (s.jets > 0.01) { const m = v.m, dir = V(0, -1, -0.55).transformDirection(m.torso.matrixWorld).normalize(); for (const sd of [-1, 1]) fx.jet(t, V(sd * 0.13, 0, -0.42).applyMatrix4(m.torso.matrixWorld), dir, s.jets, v.A.i * 10 + sd); }
         if (s.rod > 0.02 && v.weap.wL?.type === 'rod' && !s.gone.wL) fx.crackle(t, v.points.tipL(), s.rod * (0.55 + 0.45 * Math.abs(Math.sin(t * 13))), 31 + v.A.i);
         for (const [k, st] of v.feet.steps.entries()) if (t >= st.t && t < st.t + 2.4) fx.dust(t, st.t, V(st.x, rt.floor(v.A.id, st.t), st.z), st.land ? 1.2 + 0.6 * (st.k - 1) : 0.22 * st.k, 200 + v.A.i * 300 + k);
@@ -69,8 +72,8 @@ export function createDirector({ scene, fx, rt, views }) {
       }
     }
     // the cues
-    let mi = { missile: 0, rocket: 0 };
-    for (const P of Object.values(pool)) for (const m of P) m.group.visible = false;
+    let mi = { missile: 0, rocket: 0, micro: 0 };
+    for (const P of Object.values(pool)) for (const m of P) { m.group.visible = false; m.group.scale.setScalar(1); }
     for (const c of cues) {
       const dt = t - c.t;
       switch (c.kind) {
@@ -90,19 +93,21 @@ export function createDirector({ scene, fx, rt, views }) {
           const T0 = c.t, T1 = c.t1, k = (t - T0) / (T1 - T0); if (k < 0 || !c.fromW) break;
           const a = c.fromW, b = c.toW, mid = a.clone().lerp(b, 0.5), dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
           const ctl = mid.add(V(-dz / l * c.side, c.arc, dx / l * c.side));
-          const bez = (q) => { const u = 1 - q; return V(u * u * a.x + 2 * u * q * ctl.x + q * q * b.x, u * u * a.y + 2 * u * q * ctl.y + q * q * b.y, u * u * a.z + 2 * u * q * ctl.z + q * q * b.z); };
+          // a corkscrew round the flight line, for a swarm (its radius swells and dies away with the flight)
+          const ax = b.clone().sub(a).normalize(), e1 = V().crossVectors(ax, V(0, 1, 0)).normalize(), e2 = V().crossVectors(e1, ax), ph = H(c.n, 12) * 6.28;
+          const bez = (q) => { const u = 1 - q, p = V(u * u * a.x + 2 * u * q * ctl.x + q * q * b.x, u * u * a.y + 2 * u * q * ctl.y + q * q * b.y, u * u * a.z + 2 * u * q * ctl.z + q * q * b.z); if (c.spiral) { const th = q * c.turns * 6.28 + ph, r = c.spiral * Math.sin(Math.PI * q); p.addScaledVector(e1, Math.cos(th) * r).addScaledVector(e2, Math.sin(th) * r); } return p; };
           if (k < 1) {
             const m = flying(c.model, mi[c.model]++), p = bez(k); m.group.visible = true; m.group.position.copy(p); m.group.lookAt(bez(Math.min(1, k + 0.01))); m.update(t);
-            fx.glow.put(p.x, p.y, p.z, c.model === 'rocket' ? 0.2 : 0.32, 1, 0.75, 0.4, 0.9); fx.flash(p, c.model === 'rocket' ? 2 : 4, '#ffa050');
+            fx.glow.put(p.x, p.y, p.z, c.model === 'micro' ? 0.14 : c.model === 'rocket' ? 0.2 : 0.32, 1, 0.75, 0.4, 0.9); fx.flash(p, c.model === 'missile' ? 4 : 1.5, '#ffa050');
             if (k < 0.06) fx.muzzle(t, T0, a);
           }
           // the smoke trail, thick and twisting, thinning as it ages
           for (let j = 0; j < 46; j++) {
             const q = Math.min(k, 1) - j * 0.022; if (q < 0) break;
-            const age = (t - (T0 + q * (T1 - T0))) / (c.model === 'rocket' ? 1.4 : 2.6); if (age > 1 || age < 0) continue;
+            const age = (t - (T0 + q * (T1 - T0))) / (c.model === 'missile' ? 2.6 : c.model === 'micro' ? 1.8 : 1.4); if (age > 1 || age < 0) continue;
             const p = bez(q), w = (H(j + c.n, 3) - 0.5) * 0.25 * age;
             const g = 0.5 + 0.1 * H(j, c.n);
-            fx.smoke.put(p.x + age * 0.4 + w, p.y + age * 0.6, p.z + w, c.model === 'rocket' ? 0.06 + age * 0.3 : 0.16 + age * 0.7, g, g * 0.97, g * 0.94, (c.model === 'rocket' ? 0.4 : 0.55) * (1 - age));
+            fx.smoke.put(p.x + age * 0.4 + w, p.y + age * 0.6, p.z + w, c.model === 'missile' ? 0.16 + age * 0.7 : 0.05 + age * 0.3, g, g * 0.97, g * 0.94, (c.model === 'missile' ? 0.55 : 0.4) * (1 - age));
             if (age < 0.05) fx.glow.put(p.x, p.y, p.z, 0.14, 1, 0.6, 0.25, 1 - age / 0.05);
           }
           if (c.boom) fx.explosion(t, T1, b, c.boom, 600 + c.n);
@@ -122,6 +127,16 @@ export function createDirector({ scene, fx, rt, views }) {
         case 'sparks': if (c.every) { if (t >= c.t && t <= c.t1 + 1) for (let k = 0; c.t + k * c.every <= Math.min(t, c.t1); k++) fx.sparks(t, c.t + k * c.every, resolve(c.at, t), c.dir ? V(...c.dir) : null, c.k ?? 0.3, 800 + k + Math.round(c.t)); } else if (c.atW) fx.sparks(t, c.t, c.atW, null, c.k ?? 1, 820 + Math.round(c.t * 10)); break;
         case 'smoke': if (t >= c.t && t <= (c.t1 ?? 99)) { const p = resolve(c.at, t); for (let i = 0; i < 18; i++) { const a = ((t - c.t) / 2.4 + H(i, 760)) % 1; fx.smoke.put(p.x + a * 0.4, p.y + a * 1.4, p.z, 0.12 + a * 0.4, 0.15, 0.14, 0.14, 0.4 * (1 - a)); } } break;
         case 'fire': if (t > c.t && c.atW) fx.fire(t, c.atW, (c.k ?? 1) * S(t, c.t, c.t + 0.9), 810 + Math.round(c.t)); break;
+        case 'column': if (t > c.t && c.atW) fx.column(t, c.atW, (c.k ?? 1) * S(t, c.t, c.t + 2), 830 + Math.round(c.t)); break;
+        // an escape pod blasting up and away
+        case 'pod': {
+          if (dt < 0 || dt > 6 || !c.atW) break;
+          const m = flying('missile', mi.missile++), d = dt, p = V(c.atW.x + (c.v?.[0] ?? -1) * d, c.atW.y + (c.v?.[1] ?? 6) * d - 0.4 * d * d, c.atW.z + (c.v?.[2] ?? 0.5) * d);
+          m.group.visible = true; m.group.position.copy(p); m.group.lookAt(p.clone().add(V(c.v?.[0] ?? -1, (c.v?.[1] ?? 6) - 0.8 * d, c.v?.[2] ?? 0.5))); m.group.scale.setScalar(2.4); m.update(t);
+          fx.glow.put(p.x, p.y, p.z, 0.5, 1, 0.8, 0.5, 1); fx.flash(p, 6, '#ffb060');
+          for (let j = 1; j < 30; j++) { const e = d - j * 0.05; if (e < 0) break; const q = V(c.atW.x + (c.v?.[0] ?? -1) * e, c.atW.y + (c.v?.[1] ?? 6) * e - 0.4 * e * e, c.atW.z + (c.v?.[2] ?? 0.5) * e); fx.smoke.put(q.x, q.y, q.z, 0.15 + j * 0.03, 0.6, 0.58, 0.56, 0.5 * (1 - j / 30)); }
+          break;
+        }
         case 'flares': {
           if (dt < 0 || dt > 3 || !c.atW) break;
           for (let i = 0; i < c.n; i++) {
@@ -136,7 +151,7 @@ export function createDirector({ scene, fx, rt, views }) {
         }
         case 'loose': {
           const L = looseObjs.get(c); if (!L) break;
-          L.obj.visible = dt >= 0; if (dt < 0) break;
+          L.obj.visible = dt >= 0 && (c.t1 == null || t < c.t1); if (!L.obj.visible) break;
           const v = c.v || [1.3, 3.4, 1.5], g = 9.8, y0 = L.p0.y, t1 = (v[1] + Math.sqrt(v[1] * v[1] + 2 * g * Math.max(0, y0 - 0.15))) / g;
           let x, y, z, r;
           if (dt < t1) { x = v[0] * dt; y = y0 + v[1] * dt - g * dt * dt / 2; z = v[2] * dt; r = dt * 9; }

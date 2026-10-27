@@ -8,6 +8,30 @@ export const SUN_DIR = new THREE.Vector3(0.86, 0.2, 0.3).normalize();
 export const FOG = '#6c4c4e';
 export const FIRE_AT = new THREE.Vector3(-10.6, 0.5, -2.3); // a burning wreck behind where they will fight
 
+// the time of day: dusk (the sun low at the +x end), night (a cold moon high up, the windows and the lamps bright),
+// dawn (the sun coming up at the -x end). A story names them over time: set.sky = [[t, 'dusk'], [60, 'night'], ...]
+export const SKY = {
+  dusk: { sun: [0.86, 0.2, 0.3], top: '#121429', mid: '#5c384d', hor: '#eb854d', low: '#4d3333', glow: '#ff8c40', disc: '#ffd9a0', cloud: '#522b33', stars: 0, sunCol: '#ffb27a', sunI: 3.1, hemiSky: '#8a78a8', hemiGround: '#3a2824', hemiI: 1.7, rimI: 0.7, fog: '#6c4c4e', windows: 0.9, lamps: 0.6 },
+  night: { sun: [0.3, 0.75, -0.6], top: '#04060e', mid: '#0c1426', hor: '#26304a', low: '#0e1018', glow: '#3a4a7a', disc: '#c8d4ff', cloud: '#141a2a', stars: 1, sunCol: '#7a90d0', sunI: 1.0, hemiSky: '#38406a', hemiGround: '#141418', hemiI: 0.9, rimI: 0.5, fog: '#161c2a', windows: 1.6, lamps: 1 },
+  dawn: { sun: [-0.88, 0.16, -0.25], top: '#1a2a4c', mid: '#5a6a8c', hor: '#f0b080', low: '#3a3440', glow: '#ffb070', disc: '#fff0c8', cloud: '#7a6070', stars: 0, sunCol: '#ffd0a0', sunI: 2.6, hemiSky: '#a8b0d0', hemiGround: '#40383a', hemiI: 1.8, rimI: 0.4, fog: '#8a8090', windows: 0.4, lamps: 0.2 },
+};
+const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+// the sky at time t, blended between the story's keys
+export function skyAt(keys, t) {
+  keys = keys || [[0, 'dusk']];
+  let i = 0; while (i < keys.length - 1 && keys[i + 1][0] <= t) i++;
+  const a = SKY[keys[i][1]], nb = keys[i + 1], b = nb ? SKY[nb[1]] : a;
+  const from = nb ? nb[2] ?? nb[0] - 8 : 0; // a key's third value: when the change towards it begins
+  const k = nb ? Math.max(0, Math.min(1, (t - from) / Math.max(0.01, nb[0] - from))) : 0, e = k * k * (3 - 2 * k);
+  const out = {};
+  for (const key of Object.keys(a)) {
+    const va = a[key], vb = b[key];
+    if (typeof va === 'number') out[key] = va + (vb - va) * e;
+    else if (Array.isArray(va)) out[key] = new THREE.Vector3(...va).lerp(new THREE.Vector3(...vb), e).normalize();
+    else out[key] = _c1.set(va).clone().lerp(_c2.set(vb), e);
+  }
+  return out;
+}
 // a seeded random, so the city is the same every time
 function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
@@ -60,27 +84,30 @@ export function buildSet(scene) {
   const add = (geo, mat, x, y, z, ry = 0, cast = true) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = cast; m.receiveShadow = true; scene.add(m); return m; };
 
   // the sky: a dome, dark blue overhead to orange at the horizon, the sun low in the west
+  const U = { sun: { value: SUN_DIR.clone() }, top: { value: new THREE.Color() }, mid: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, low: { value: new THREE.Color() }, glow: { value: new THREE.Color() }, disc: { value: new THREE.Color() }, stars: { value: 0 }, cloud: { value: new THREE.Color() } };
   const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { sun: { value: SUN_DIR } },
+    side: THREE.BackSide, depthWrite: false, fog: false, uniforms: U,
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); vec4 p = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * p; }',
-    fragmentShader: `varying vec3 vD; uniform vec3 sun;
+    fragmentShader: `varying vec3 vD; uniform vec3 sun, top, mid, hor, low, glow, disc, cloud; uniform float stars;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       void main(){
         float y = vD.y;
-        vec3 top = vec3(0.07, 0.08, 0.17), mid = vec3(0.36, 0.22, 0.30), hor = vec3(0.92, 0.52, 0.30), low = vec3(0.30, 0.20, 0.20);
         vec3 c = y > 0.0 ? mix(hor, mid, smoothstep(0.0, 0.22, y)) : mix(hor, low, smoothstep(0.0, -0.15, y));
         c = mix(c, top, smoothstep(0.2, 0.75, y));
         float s = max(0.0, dot(normalize(vD), sun));
-        c += vec3(1.0, 0.55, 0.25) * pow(s, 8.0) * 0.55 + vec3(1.0, 0.85, 0.6) * pow(s, 200.0) * 1.2;
-        c = mix(c, vec3(1.0, 0.92, 0.75), smoothstep(0.9993, 0.9996, s)); // the disc
-        // a few bands of cloud across the sun
+        c += glow * pow(s, 8.0) * 0.55 + disc * pow(s, 200.0) * 1.2;
+        c = mix(c, disc * 1.1 + vec3(0.1), smoothstep(0.9993, 0.9996, s) * step(0.01, disc.r + disc.g + disc.b)); // the disc
+        // a few bands of cloud low over the city
         float band = sin(vD.y * 90.0 + vD.x * 6.0) * 0.5 + 0.5; band = smoothstep(0.75, 1.0, band) * smoothstep(0.02, 0.06, y) * (1.0 - smoothstep(0.12, 0.2, y));
-        c = mix(c, vec3(0.32, 0.17, 0.2), band * 0.6);
+        c = mix(c, cloud, band * 0.6);
+        // stars at night
+        vec2 g = floor(vec2(atan(vD.z, vD.x) * 120.0, y * 160.0)); float st = step(0.996, h(g)) * smoothstep(0.08, 0.3, y) * stars;
+        c += vec3(0.75, 0.8, 1.0) * st;
         gl_FragColor = vec4(c, 1.0);
       }`,
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), skyMat); sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
-  scene.userData.sky = sky;
+  scene.userData.sky = sky; scene.userData.skyU = U; scene.userData.facades = facades;
 
   // the ground: asphalt, sidewalks, kerbs, a dashed centre line
   const asph = canvasTex(64, 64, (g) => { g.fillStyle = '#2a2826'; g.fillRect(0, 0, 64, 64); for (let k = 0; k < 500; k++) { const v = R(); g.fillStyle = v < 0.4 ? '#24221f' : v < 0.8 ? '#312e2a' : '#3a3632'; g.fillRect(Math.floor(R() * 64), Math.floor(R() * 64), 1, 1); } g.fillStyle = '#1c1a18'; let x = 10, y = 20; for (let k = 0; k < 30; k++) { g.fillRect(x, y, 1, 1); x += R() < 0.5 ? 1 : 0; y += R() < 0.7 ? 1 : -1; if (y > 63) y = 0; } });
@@ -132,7 +159,7 @@ export function buildSet(scene) {
   }
 
   // street lamps, one of them bent over
-  const pole = toon({ color: '#26262a' }), lampOn = new THREE.MeshBasicMaterial({ color: '#ffc870' }), lampOff = toon({ color: '#3a3a40' });
+  const pole = toon({ color: '#26262a' }), lampOn = new THREE.MeshBasicMaterial({ color: '#ffc870' }), lampOff = toon({ color: '#3a3a40' }); scene.userData.lampOn = lampOn;
   for (const side of [-1, 1]) for (let x = -44; x < 44; x += 9) {
     const g = new THREE.Group(); g.position.set(x + side * 2, 0.12, side * 4.0); scene.add(g);
     const bent = Math.abs(x + 8) < 2 && side === 1;

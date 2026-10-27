@@ -14,6 +14,21 @@ export const CHARACTERS = {
     kit: { body: 'B4', armL: 'A4', armR: 'A4', legs: 'L4', wL: null, wR: 'W-blade1', sh: 'MS1', paint: 'black', side: 'e', boss: true, x: 3, y: 7 },
     weapons: { wR: 'blade', sh: 'launcher' },
   },
+  karl: {
+    zh: '卡爾', en: 'Karl', kind: 'wanzer', eye: '#ffd060', kx: 1.14,
+    kit: { body: 'B2', armL: 'A2', armR: 'A2', legs: 'L2', wL: 'SH2', wR: 'SG1', sh: null, paint: 'navy', side: 'p', ri: 2 },
+    weapons: { wR: 'shotgun', wL: 'shield' },
+  },
+  guard: {
+    zh: '同盟哨兵', en: 'Alliance sentry', kind: 'wanzer', eye: '#e8f0ff',
+    kit: { body: 'B1', armL: 'A1', armR: 'A1', legs: 'L1', wL: null, wR: 'RF1', sh: null, paint: null, side: 'e', x: 5, y: 9 },
+    weapons: { wR: 'rifle' },
+  },
+  halden: {
+    zh: '哈爾登', en: 'Halden', kind: 'wanzer', eye: '#ff2a20', blink: true, kx: 1.14,
+    kit: { body: 'B3', armL: 'A3', armR: 'A3', legs: 'L2', wL: 'W-blade1', wR: 'W-blade1', sh: 'MS2', paint: 'arctic', side: 'e', boss: true, x: 1, y: 1 },
+    weapons: { wR: 'greatblade', wL: 'greatblade', sh: 'swarm' },
+  },
   mia: { zh: '米雅', en: 'Mia', kind: 'heli', paint: 'olive' },
   hq: { zh: '指揮部', en: 'HQ', kind: 'voice' },
 };

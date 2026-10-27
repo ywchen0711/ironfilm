@@ -25,8 +25,24 @@ RAW, KN, FIRE, VSCO, HELI = sys.argv[1:6]
 HERE = os.path.dirname(os.path.abspath(__file__))
 CUE = json.load(open(os.path.join(HERE, 'cues.json'), encoding='utf-8'))
 LEN, EP = CUE['LEN'], CUE['ep']
+FILM = CUE.get('filmLen', LEN)
 rng = np.random.default_rng(7)
-N = int((LEN + 1.5) * SR)
+N = int((FILM + 1.5) * SR)
+# slow motion: everything is cued in story time; it is placed in film time, and sounds inside a slowed stretch are
+# played slower and lower, as a slowed recording would be
+WARP = CUE.get('warp', [])
+def to_film(tw):
+    f = w = 0.0
+    for a, b, r in WARP:
+        if tw <= a: return f + (tw - w)
+        f += a - w; w = a
+        if tw <= b: return f + (tw - a) / r
+        f += (b - a) / r; w = b
+    return f + (tw - w)
+def rate_at(tw):
+    for a, b, r in WARP:
+        if a <= tw < b: return r
+    return 1.0
 
 # ---------------------------------------------------------------- loading and shaping
 _cache = {}
@@ -56,7 +72,9 @@ def pan(x, p): a = (p + 1) * np.pi / 4; return x * np.array([np.cos(a), np.sin(a
 
 BUS = {k: np.zeros((N, 2), np.float32) for k in ('sfx', 'verb', 'music', 'amb')}
 def put(bus, x, t, g=1.0, p=0.0, verb=0.25):
-    i = int(t * SR)
+    r = rate_at(t)
+    if r < 1 and len(x): x = pitch(x, 12 * np.log2(r) * 0.5)
+    i = int(to_film(t) * SR)
     if i >= N or len(x) == 0: return
     if i < 0: x = x[-i:]; i = 0
     x = pan(x, p) * g; n = min(len(x), N - i)
@@ -183,12 +201,12 @@ if first: servo(first['t'] - 0.45, 1.2, -0.3)  # the gun coming up into the aim
 
 # the helicopter: the real rotor recording, as loud as it is near; the fly-by recording as it comes overhead
 for h in CUE['helis']:
-    path = np.array(h['path']); tt = np.arange(N) / SR; d = np.interp(tt, path[:, 0], path[:, 1]); g = np.clip(3.2 / (d + 1.0), 0, 1.0) ** 1.3
+    path = np.array(h['path']); tt = np.arange(N) / SR; d = np.interp(tt, [to_film(x) for x in path[:, 0]], path[:, 1]); g = np.clip(3.2 / (d + 1.0), 0, 1.0) ** 1.3
     bed = loop(load(os.path.join(HELI, 'helicopter_0.mp3')), N / SR + 0.1)[:N]
     BUS['sfx'] += filt(bed, 'lowpass', 6000) * (g[:, None] * 0.55)
-    nearest = float(path[np.argmin(path[:, 1]), 0]); fly = load(os.path.join(HELI, 'heli_0.ogg'))
+    nearest = to_film(float(path[np.argmin(path[:, 1]), 0])); fly = load(os.path.join(HELI, 'heli_0.ogg'))
     env = uniform_filter1d(np.abs(fly).max(axis=1), int(0.3 * SR)); pk = int(np.argmax(env)) / SR
-    put('sfx', fade(fly, 1.5, 3), nearest - pk, 0.5, 0, verb=0.3)
+    BUS['sfx'][max(0, int((nearest - pk) * SR)):][:len(fly)] += fade(fly, 1.5, 3)[:max(0, N - max(0, int((nearest - pk) * SR)))] * 0.5
 
 # the city: wind, the fires crackling, the war somewhere else
 wind = filt(filt(rng.normal(0, 1, (N, 2)).astype(np.float32), 'lowpass', 400), 'highpass', 60)
@@ -287,14 +305,14 @@ env = uniform_filter1d(np.abs(sfx).max(axis=1), int(0.05 * SR))
 duck = uniform_filter1d(1 / (1 + np.clip(env - 0.25, 0, None) * 1.2), int(0.2 * SR))
 mix = sfx + music * db(-4) * duck[:, None] + BUS['amb'] + reverb(BUS['verb']) * db(-6)
 mix = filt(mix, 'highpass', 28)
-tt = np.arange(N) / SR; mix *= np.clip(tt / 0.6, 0, 1)[:, None] * np.clip((LEN + 0.6 - tt) / 1.2, 0, 1)[:, None]
+tt = np.arange(N) / SR; mix *= np.clip(tt / 0.6, 0, 1)[:, None] * np.clip((FILM + 0.6 - tt) / 1.2, 0, 1)[:, None]
 # level: the loudest few moments (the top 0.05 % of samples) at -1 dB; a look-ahead limiter catches what is above
 peak = np.abs(mix).max(axis=1); mix *= db(-1) / max(1e-6, float(np.percentile(peak, 99.95))); peak = np.abs(mix).max(axis=1)
 look = int(0.004 * SR)
 g = minimum_filter1d(np.minimum(1, db(-1) / np.maximum(peak, 1e-6)), size=2 * look + 1)
 g = uniform_filter1d(minimum_filter1d(g, size=int(0.02 * SR)), size=int(0.02 * SR))
-mix = np.clip(mix * g[:, None], -db(-0.5), db(-0.5))[:int((LEN + 0.6) * SR)]
+mix = np.clip(mix * g[:, None], -db(-0.5), db(-0.5))[:int((FILM + 0.6) * SR)]
 out = os.path.join(HERE, '..', 'audio'); os.makedirs(out, exist_ok=True)
 wav = os.path.join(HERE, f'{EP}.wav'); sf.write(wav, mix, SR, subtype='PCM_24')
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libmp3lame', '-q:a', '1', os.path.join(out, f'{EP}.mp3')], check=True)
-print(EP, 'peak', round(float(np.abs(mix).max()), 3), 'rms dB', round(float(20 * np.log10(np.sqrt((mix ** 2).mean()))), 1), 'secs', len(mix) / SR)
+subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libmp3lame', '-q:a', '1' if FILM < 90 else '3', os.path.join(out, f'{EP}.mp3')], check=True)
+print(EP, 'film', round(FILM, 1), 'peak', round(float(np.abs(mix).max()), 3), 'rms dB', round(float(20 * np.log10(np.sqrt((mix ** 2).mean()))), 1), 'secs', len(mix) / SR)

@@ -5,7 +5,7 @@
 //   pose(s, t, a, W)    how it poses the actor (s.pose = the engine's pose parameters, plus s.jets, s.rod, s.hp, ...)
 //   cues(a, W)          what it sets off: effects and sounds, as timed cues (see core/runtime.js and core/director.js)
 // W gives the time-bound world: W.pos(id, t) another actor's place, W.T the story's beats, W.self the actor.
-import { cl, seg, ss, S, bump, imp, lerp, ease, shape, spline, H } from './util.js?v=3';
+import { cl, seg, ss, S, bump, imp, lerp, ease, shape, spline, H } from './util.js?v=4';
 
 const REST = { s: -0.5, e: -0.9 };
 const mixArm = (a, b, k) => ({ s: a.s + (b.s - a.s) * k, e: a.e + (b.e - a.e) * k });
@@ -71,8 +71,21 @@ export const ACT = {
       if (t > a.t && t < a.t1) { s.jets = Math.max(s.jets, a.jets ?? 1.3); s.skate = !!(a.skate ?? true); if (a.armBack !== false) { s.pose.armR = { s: 0.6, e: -0.3 }; s.pose.wristR = 0.4; } }
     },
   },
+  // a lunge in and back out again (for blows by the actor the anchor does not belong to)
+  distBump: { dist(t, a) { return a.d * bump(t, a.t, a.t1); } },
   // the distance kept by `anchor` changes by d between t and t1 (pushed back, stepping in)
   dist: { dist(t, a) { return a.d * ease(seg(t, a.t, a.t1), a.e); } },
+  // go to a place: to = [x, z], or { rel: 'hound', at: 120, off: [dx, dz] } (a place next to another actor at a given
+  // moment). Starts from wherever the earlier moves had it at t; holds the place afterwards.
+  goto: {
+    move(p, t, a, W) {
+      if (t < a.t) return;
+      const q = W.before(a, a.t), to = Array.isArray(a.to) ? { x: a.to[0], z: a.to[1] } : (() => { const r = W.pos(a.to.rel, a.to.at ?? a.t1); return { x: r.x + (a.to.off?.[0] || 0), z: r.z + (a.to.off?.[1] || 0) }; })();
+      const k = ease(seg(t, a.t, a.t1), a.e || 'ss'); p.x = q.x + (to.x - q.x) * k; p.z = q.z + (to.z - q.z) * k;
+      if (a.hover && t < a.t1) p.y += a.hover * bump(t, a.t, a.t1);
+    },
+    pose(s, t, a) { if (t > a.t && t < a.t1) { if (a.jets) s.jets = Math.max(s.jets, a.jets); if (a.skate) s.skate = true; } },
+  },
   // stay where the earlier moves had put it at t (then let the later moves carry on from there)
   pin: { move(p, t, a, W) { if (t < a.t) return; const q = W.before(a, a.t); p.x = q.x; p.z = q.z; } },
   // flying (a helicopter): a smooth path through [t, x, y, z] keys
@@ -166,6 +179,21 @@ export const ACT = {
       return c;
     },
   },
+  // a swarm of micro-missiles, each corkscrewing on its own path (the "Itano circus"); `decoys` of them are lost
+  // to flares and burst short, the rest strike the target
+  swarm: {
+    pose(s, t, a) { const k = shape(t, a.t - 0.2, a.t + a.n * (a.rate ?? 0.06), 'hold', 0.1); addP(s, 'lean', -0.08 * k); },
+    cues(a, W) {
+      const c = [];
+      for (let k = 0; k < a.n; k++) {
+        const t = a.t + k * (a.rate ?? 0.06), n = Math.round(t * 100) + k, lost = k < (a.decoys ?? 0);
+        const at = (a.at ?? a.t + 2) + k * (a.rate ?? 0.06) * 0.6 + H(n, 7) * 0.3, tp = W.pos(a.target, at);
+        const to = lost ? [tp.x + (H(n, 4) - 0.5) * 6, tp.y - 1.5 - H(n, 5) * 2, tp.z + (H(n, 6) - 0.5) * 6] : [tp.x + (H(n, 4) - 0.5) * 0.8, tp.y + (H(n, 5) - 0.5) * 0.5, tp.z + (H(n, 6) - 0.5) * 0.8];
+        c.push({ t, t1: at, kind: 'missile', model: 'micro', from: ref(a.self, 'launcher'), to, arc: 2 + H(n, 8) * 3, side: (H(n, 9) - 0.5) * 6, spiral: 0.6 + H(n, 10) * 0.8, turns: 2 + H(n, 11) * 2, boom: lost ? 0.35 : 0.5, n });
+      }
+      return c;
+    },
+  },
   flares: { cues(a) { return [{ t: a.t, kind: 'flares', at: ref(a.self, 'body'), n: a.n ?? 14 }]; } },
   jets: { pose(s, t, a) { s.jets = Math.max(s.jets, (a.k ?? 1) * shape(t, a.t, a.t1, a.shape || 'hold', 0.08)); } },
   rod: { pose(s, t, a) { s.rod = Math.max(s.rod, (a.k ?? 1) * shape(t, a.t, a.t1, 'hold', 0.5)); } },
@@ -178,7 +206,11 @@ export const ACT = {
   },
   // a part breaks off; a weapon is knocked from the hand
   sever: { pose(s, t, a) { if (t >= a.t) s.hp[a.part] = 0; }, cues(a) { return [{ t: a.t, kind: 'loose', what: ref(a.self, a.part), k: a.k ?? 1, v: a.v }]; } },
-  disarm: { pose(s, t, a) { if (t >= a.t) s.gone[a.slot] = true; }, cues(a) { return [{ t: a.t, kind: 'loose', what: ref(a.self, a.slot), k: a.k ?? 1, v: a.v }]; } },
+  // knocked from the hand; picked up again at t1 if given
+  disarm: { pose(s, t, a) { if (t >= a.t && t < (a.t1 ?? 1e9)) s.gone[a.slot] = true; }, cues(a) { return [{ t: a.t, t1: a.t1, kind: 'loose', what: ref(a.self, a.slot), k: a.k ?? 1, v: a.v }]; } },
+  // broken from the start (a part lost in an earlier episode)
+  broken: { pose(s, t, a) { if (t >= a.t) s.hp[a.part] = 0; } },
+  hide: { pose(s, t, a) { if (t >= a.t && t < (a.t1 ?? 1e9)) s.hidden = true; } },
   die: { pose(s, t, a) { if (t >= a.t) { s.dead = true; s.hp.body = 0; } } },
   // falling over backwards
   fall: {

@@ -35,3 +35,8 @@ body.playing:not(.awake) #bar { opacity: 0; }
 #scrub { flex: 1; min-width: 60px; accent-color: var(--gold); }
 #time { font-variant-numeric: tabular-nums; font-size: 13px; opacity: 0.8; white-space: nowrap; }
 @media (max-width: 520px) { #time { display: none; } #bar { gap: 6px; } }
+#eps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 0.6em; }
+#eps a { color: var(--ink); text-decoration: none; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 999px; padding: 0.3em 1em; font-size: 0.85em; }
+#eps a.on { border-color: var(--gold); color: var(--gold); }
+#eps a small { margin-left: 0.6em; opacity: 0.6; }
+#loading { opacity: 0.7; letter-spacing: 0.1em; margin: 0.4em 0; }

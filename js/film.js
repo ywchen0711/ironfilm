@@ -6,21 +6,24 @@
 //   the camera (core/camera.js)     for the shot
 // Nothing in here belongs to one story.
 import * as THREE from '../engine/lib/three.module.min.js';
-import { buildSet, SUN_DIR, FOG } from './set.js?v=3';
-import { FX } from './fx.js?v=3';
-import { createRuntime } from './core/runtime.js?v=3';
-import { buildActors } from './core/actors3d.js?v=3';
-import { createDirector } from './core/director.js?v=3';
-import { createCamera } from './core/camera.js?v=3';
-import { nameOf } from './cast/characters.js?v=3';
-import { seg } from './core/util.js?v=3';
-import * as score from './score.js?v=3';
+import { buildSet, FOG, skyAt } from './set.js?v=4';
+import { buildProps } from './props.js?v=4';
+import { makeClock } from './core/time.js?v=4';
+import { EPISODES } from './story/index.js?v=4';
+import { FX } from './fx.js?v=4';
+import { createRuntime } from './core/runtime.js?v=4';
+import { buildActors } from './core/actors3d.js?v=4';
+import { createDirector } from './core/director.js?v=4';
+import { createCamera } from './core/camera.js?v=4';
+import { nameOf } from './cast/characters.js?v=4';
+import { seg } from './core/util.js?v=4';
+import * as score from './score.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const params = new URLSearchParams(location.search);
 const EP = /^[a-z0-9]+$/.test(params.get('ep') || '') ? params.get('ep') : 'ep1';
-const story = (await import(`./story/${EP}.js?v=3`)).default, LEN = story.LEN;
+const story = (await import(`./story/${EP}.js?v=4`)).default, clock = makeClock(story), LEN = clock.filmLen; // LEN: the film's length (slow motion included)
 let lang = params.get('lang') === 'en' ? 'en' : (() => { try { return localStorage.getItem('ironfilm.lang') || 'zh'; } catch (e) { return 'zh'; } })();
 
 // ---------------------------------------------------------------- the stage
@@ -33,7 +36,7 @@ const scene = new THREE.Scene();
 const FOG_NEAR = 22, FOG_FAR = 120;
 scene.fog = new THREE.Fog(FOG, FOG_NEAR, FOG_FAR);
 const camera = new THREE.PerspectiveCamera(40, 2.35, 0.1, 400);
-scene.add(new THREE.HemisphereLight('#8a78a8', '#3a2824', 1.7));
+const hemi = new THREE.HemisphereLight('#8a78a8', '#3a2824', 1.7); scene.add(hemi);
 const sun = new THREE.DirectionalLight('#ffb27a', 3.1); sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
 Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 60 }); sun.shadow.camera.updateProjectionMatrix();
@@ -42,6 +45,7 @@ const rim = new THREE.DirectionalLight('#6a8ad8', 0.7); rim.position.set(-10, 6,
 const fireLights = (story.set?.fires || []).map((f) => { const l = new THREE.PointLight('#ff7a30', 6 * (f.k ?? 1), 0, 2); l.position.set(f.at[0], f.at[1] + 0.8, f.at[2]); scene.add(l); return l; });
 const fxLights = [0, 1, 2].map(() => { const l = new THREE.PointLight('#ffb060', 0, 0, 2); scene.add(l); return l; });
 buildSet(scene);
+const props = buildProps(scene, story.set?.props);
 const fx = new FX(scene);
 
 // ---------------------------------------------------------------- the story and its actors
@@ -52,7 +56,7 @@ const director = createDirector({ scene, fx, rt, views });
 const cam = createCamera(story, rt, director.resolve);
 // what each actor watches: whoever it was told to look at, else whoever it faces
 function watched(A, s) {
-  const id = s.lookTo || A.face; const v = views[id]; if (!v) return null;
+  const id = s.lookTo || A.face; const v = views[id]; if (!v || rt.state(id, s.t ?? 0).hidden) return null; // nobody watches what is not there
   if (v.kind === 'heli') return v.points.body();
   const p = rt.pos(id, s.t ?? 0); return V(p.x, p.y + 1.25, p.z);
 }
@@ -68,7 +72,15 @@ director.prepare(poseAll);
 
 // ---------------------------------------------------------------- one frame
 let debugCam = null;
-function frame(t) {
+function frame(tf) {
+  const t = clock.toStory(tf); // everything in the story runs on story time
+  // the time of day
+  const sky = skyAt(story.set?.sky, t), U = scene.userData.skyU;
+  U.sun.value.copy(sky.sun); for (const k of ['top', 'mid', 'hor', 'low', 'glow', 'disc', 'cloud']) U[k].value.copy(sky[k]); U.stars.value = sky.stars;
+  sun.color.copy(sky.sunCol); sun.intensity = sky.sunI; hemi.color.copy(sky.hemiSky); hemi.groundColor.copy(sky.hemiGround); hemi.intensity = sky.hemiI; rim.intensity = sky.rimI;
+  scene.fog.color.copy(sky.fog); for (const c of [fx.smoke, fx.glow]) c.uni.uFogC.value.copy(sky.fog);
+  for (const f of scene.userData.facades) f.emissiveIntensity = sky.windows; scene.userData.lampOn.color.setRGB(sky.lamps, sky.lamps * 0.78, sky.lamps * 0.44);
+  for (const p of props) p.update?.(t, sky);
   poseAll(t);
   const c = debugCam ? debugCam(t) : cam.at(t);
   const flashes = director.render(t, c.look);
@@ -84,20 +96,20 @@ function frame(t) {
   camera.lookAt(c.look.clone().add(V(sx, sy, 0)));
   camera.fov = c.fov; camera.updateProjectionMatrix();
   const focus = c.look.clone(); focus.y = 0;
-  sun.target.position.copy(focus); sun.position.copy(focus).addScaledVector(SUN_DIR, 30);
+  sun.target.position.copy(focus); sun.position.copy(focus).addScaledVector(sky.sun, 30);
   scene.userData.sky.position.copy(camera.position);
   fx.end(camera, renderer.domElement.height, FOG_NEAR, FOG_FAR);
   renderer.render(scene, camera);
-  overlays(t, sc.flash);
+  overlays(t, sc.flash, tf);
 }
 
 // ---------------------------------------------------------------- words and fades over the picture
-function overlays(t, flash) {
-  const fade = Math.max(1 - seg(t, 0, 0.8), seg(t, LEN - 0.8, LEN));
+function overlays(t, flash, tf) {
+  const SL = story.LEN, fade = Math.max(1 - seg(tf, 0, 0.8), seg(tf, LEN - 0.8, LEN), story.blacks ? Math.max(0, ...story.blacks.map(([a, b]) => Math.min(seg(t, a, a + 0.5), 1 - seg(t, b - 0.5, b)))) : 0);
   $('fade').style.opacity = fade.toFixed(3); $('flash').style.opacity = flash.toFixed(3);
   const tt = story.title[lang], tk = Math.min(seg(t, 0.8, 1.6), 1 - seg(t, 2.8, 3.4));
   $('title').style.opacity = tk.toFixed(3); $('title').innerHTML = `<b>${tt[0]}</b><i>${tt[1]}</i><small>${tt[2]}</small>`;
-  const ek = Math.min(seg(t, LEN - 1.7, LEN - 1.0), 1 - seg(t, LEN - 0.4, LEN));
+  const ek = Math.min(seg(t, SL - (story.endFor || 1.7), SL - (story.endFor || 1.7) + 0.7), 1 - seg(t, SL - 0.4, SL));
   $('end').style.opacity = ek.toFixed(3); $('end').innerHTML = `<b>${story.end[lang][0]}</b><small>${story.end[lang][1]}</small>`;
   const L = story.lines[lang].find(([a, b]) => t >= a && t < b), sub = $('sub');
   if (L) { const k = Math.min(seg(t, L[0], L[0] + 0.15), 1 - seg(t, L[1] - 0.15, L[1])); sub.style.opacity = k.toFixed(3); const html = `<span class="who">${nameOf(L[2], lang)}</span>${L[3]}`; if (sub.dataset.html !== html) { sub.innerHTML = html; sub.dataset.html = html; } }
@@ -118,13 +130,14 @@ window.addEventListener('resize', () => { layout(); frame(state.t); });
 // ---------------------------------------------------------------- the player
 const state = { t: Math.max(0, Math.min(LEN, +(params.get('t') || 0))), playing: false, wall: 0, from: 0 };
 const UI = {
-  zh: { play: '▶ 播放', replay: '↺ 重播', sub: `以《鋼魂戰線》的 3D 引擎拍攝的動畫短片．${Math.round(LEN)} 秒`, lang: 'EN', hint: '空白鍵 播放／暫停．← → 快轉' },
-  en: { play: '▶ Play', replay: '↺ Replay', sub: `An animated short filmed in the Iron Front 3D engine · ${Math.round(LEN)} seconds`, lang: '中', hint: 'Space play / pause · ← → skip' },
+  zh: { play: '▶ 播放', replay: '↺ 重播', sub: `以《鋼魂戰線》的 3D 引擎拍攝的動畫短片．${Math.floor(LEN / 60)} 分 ${Math.round(LEN % 60)} 秒`, lang: 'EN', hint: '空白鍵 播放／暫停．← → 快轉' },
+  en: { play: '▶ Play', replay: '↺ Replay', sub: `An animated short filmed in the Iron Front 3D engine · ${Math.floor(LEN / 60)}:${String(Math.round(LEN % 60)).padStart(2, '0')}`, lang: '中', hint: 'Space play / pause · ← → skip' },
 };
 function texts() {
   const u = UI[lang]; document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
   $('go').textContent = state.t >= LEN - 0.01 ? u.replay : u.play; $('blurb').textContent = u.sub; $('lang').textContent = u.lang; $('hint').textContent = u.hint;
   $('st').innerHTML = `<b>${story.title[lang][0]}</b><i>${story.title[lang][1]}</i>`;
+  $('eps').innerHTML = EPISODES.map((e) => `<a href="?ep=${e.id}${lang === 'en' ? '&lang=en' : ''}" class="${e.id === EP ? 'on' : ''}">${e[lang]}<small>${e.len}</small></a>`).join('');
 }
 function play() {
   if (state.t >= LEN - 0.01) state.t = 0;
@@ -133,7 +146,8 @@ function play() {
 }
 function pause() { state.playing = false; score.stop(); $('pp').textContent = '▶'; document.body.classList.remove('playing'); }
 function seek(t) { const was = state.playing; if (was) score.stop(); state.t = Math.max(0, Math.min(LEN, t)); if (was) { state.wall = performance.now(); state.from = state.t; score.play(state.t); } frame(state.t); bar(); }
-function bar() { $('scrub').value = state.t.toFixed(2); $('time').textContent = `${state.t.toFixed(1).padStart(4, '0')} / ${LEN.toFixed(1)}`; }
+const mmss = (v) => `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
+function bar() { $('scrub').value = state.t.toFixed(2); $('time').textContent = `${mmss(state.t)} / ${mmss(LEN)}`; }
 function loop() {
   if (state.playing) {
     state.t = state.from + (performance.now() - state.wall) / 1000;
@@ -156,12 +170,13 @@ window.addEventListener('keydown', (e) => {
 // the controls show while the mouse moves
 let idle = 0; window.addEventListener('pointermove', () => { document.body.classList.add('awake'); clearTimeout(idle); idle = setTimeout(() => document.body.classList.remove('awake'), 2200); });
 
-score.setSource(`audio/${story.id}.mp3?v=3`);
+score.setSource(`audio/${story.id}.mp3?v=4`);
 layout(); texts(); frame(state.t); bar(); loop(); score.load();
+$('loading').remove(); $('go').hidden = false;
 if (state.t > 0) $('start').hidden = true;
 // for tests and screenshots
 window.FILM = {
-  score, scene, THREE, rt, views, story, LEN, state,
+  score, scene, THREE, rt, views, story, LEN, state, clock,
   frame: (t) => { state.t = t; frame(t); bar(); },
   cam: (f) => { debugCam = f ? (t) => { const o = f(t, rt); return { pos: V(...o.pos), look: V(...o.look), fov: o.fov || 35, roll: 0 }; } : null; },
   setLang: (l) => { lang = l; texts(); },

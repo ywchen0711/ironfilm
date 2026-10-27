@@ -7,6 +7,19 @@ drops from a rooftop. The Hound has the better of him: his gun is knocked from h
 knee. As the blade comes up, Mia's attack helicopter comes in over the rooftops, rockets first. Ron gets up, and
 they finish it together.
 
+**Episode 2 — The Ceasefire Line (5 min).** The same night, five minutes before the truce. At the checkpoint the
+sentries raise their rifles and Ron lowers his first; then a missile falls out of the dark. Halden of Orrin, the arms
+company that sells to both sides, has come in his prototype to keep the war alive. He cuts down the sentries, breaks
+Karl's shield, drives Mia off with a swarm of missiles and beats Ron to his knees; then, down the burning street,
+one-armed, comes the Black Hound. A three-way standoff; the Hound turns on Halden; Ron and the Hound fight him
+together, and as the truce comes into force they cut him down crosswise. Dawn.
+
+Filmed after the directors who taught us how: Kubrick's one-point perspective; Kurosawa's long lenses, the slow walk
+through smoke, the pause before the fall; Leone's eyes and three-way standoff; John Woo's guns at each other's heads
+and slow motion; Spielberg's face before the threat, a dolly zoom, one long take round the fighters; Ridley Scott's
+silhouettes in the floodlights; Itano Ichirō's corkscrewing missile swarms; George Miller's centre framing; Michael
+Mann's handheld gunfight; and a Nolan clock counting down to the truce.
+
 Play: https://ywchen0711.github.io/ironfilm/ (space to play or pause, ← → to skip, Chinese or English subtitles;
 `?t=12` starts at second 12, `?lang=en` in English, `?ep=ep1` picks the episode).
 
@@ -22,25 +35,28 @@ Everything a story needs is data; everything that draws, moves or sounds is shar
 | `js/core/runtime.js` | a story at work: where everyone is, which way they face, how they stand, at any moment; the full cue list. Pure arithmetic, shared with the sound tools |
 | `js/core/actors3d.js` | builds each character in 3D and poses it; named points (chest, head, muzzle, tipL, launcher, gun, podL…) for effects and cameras |
 | `js/core/director.js` | turns cues into effects: shots and tracers, missiles and rockets with smoke trails, blasts, clashes and arcs, sparks, flares, torn-off parts, fire |
-| `js/core/camera.js` | shot types: moving between two points, following actors, fixed, circling |
+| `js/core/camera.js` | shot types: moving between two points, following actors, fixed, circling, a dolly zoom (`vertigo`), handheld (`hand`), close-ups in a head's own frame (`local`) |
+| `js/core/time.js` | slow motion: a story's `warp` slows its world down over stretches; the sound mix follows |
+| `js/props.js` | set dressing: barriers, a boom gate, a booth, floodlight towers with real beams, waving flags, sandbags, wire, a tank wreck |
+| `js/story/index.js` | the list of episodes for the start screen |
 | `js/models/weapons.js` | detailed weapons: machine gun, shock rod, blade, shoulder launcher, missile, rocket |
 | `js/models/heli.js` | the attack helicopter: rotors, stub wings and pods, chin gun, lights, searchlight |
 | `js/feet.js`, `js/rig.js` | footwork (planted feet, steps, landings, kneeling), leg IK, extra joints, spring follow-through |
-| `js/fx.js`, `js/set.js` | particles and arcs; the street at sunset |
+| `js/fx.js`, `js/set.js` | particles and arcs; the street, with dusk, night and dawn skies a story can move between (`set.sky`) |
 | `engine/` | Iron Front's renderer, copied unchanged: the wanzer models (`mech3d.js`), materials, three.js r160 |
 | `tools/cues.mjs`, `tools/mix.py` | the soundtrack: every cue, step and thruster burn exported from the story, then mixed from real recordings and an orchestra |
 
 ### A new episode
 
-1. Copy `js/story/ep1.js` to `js/story/ep2.js` and change it: actors (`who` is a character id), their `track` of
+1. Copy `js/story/ep2.js` to `js/story/ep3.js` and change it: actors (`who` is a character id), their `track` of
    moves, `shots`, `lines`, `cues`, `music`, `LEN`.
-2. `node tools/cues.mjs ep2 > tools/cues.json`, then `python -P tools/mix.py RAW KN FIRE VSCO HELI` → `audio/ep2.mp3`.
-3. Open `?ep=ep2`.
+2. `node tools/cues.mjs ep3 > tools/cues.json`, then `python -P tools/mix.py RAW KN FIRE VSCO HELI` → `audio/ep3.mp3`.
+3. Add it to `js/story/index.js`; open `?ep=ep3`.
 
 ### A new character
 
 Add an entry to `js/cast/characters.js`: a wanzer with its Iron Front parts (`engine/data.js` ids), paint and
-weapons (`mg`, `rod`, `blade`, `launcher`), or a helicopter with its paint. Then use its id as `who` in a story.
+weapons (`mg`, `rifle`, `shotgun`, `rod`, `blade`, `greatblade`, `shield`, `launcher`, `swarm`), or a helicopter with its paint. Then use its id as `who` in a story.
 
 ### A new move or weapon
 

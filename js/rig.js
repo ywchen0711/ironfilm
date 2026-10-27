@@ -8,7 +8,7 @@
 //     The springs are run once over the whole film at load, so any frame still stands on its own.
 import * as THREE from '../engine/lib/three.module.min.js';
 import { poseMech } from '../engine/mech3d.js?v=16';
-import { LEG } from './feet.js?v=3';
+import { LEG } from './feet.js?v=4';
 
 const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const HZ = 60;
