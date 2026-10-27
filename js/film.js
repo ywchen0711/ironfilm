@@ -242,7 +242,7 @@ function overlays(t) {
 
 // ---------------------------------------------------------------- the frame on the screen: 2.35:1 on wide screens
 function layout() {
-  const W = window.innerWidth, Hh = window.innerHeight, ar = W / Hh > 1.3 ? 2.35 : 16 / 9;
+  const W = window.innerWidth, Hh = window.innerHeight, ar = params.has('thumb') || W / Hh <= 1.3 ? 16 / 9 : 2.35;
   let w = W, h = W / ar; if (h > Hh) { h = Hh; w = h * ar; }
   const f = $('frame'); f.style.width = w + 'px'; f.style.height = h + 'px'; f.style.left = (W - w) / 2 + 'px'; f.style.top = (Hh - h) / 2 + 'px';
   f.style.fontSize = Math.max(11, h / 30) + 'px';
