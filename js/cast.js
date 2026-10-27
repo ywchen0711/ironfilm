@@ -187,6 +187,7 @@ export function houndPose(t) {
     out.tilt = -0.18 * S(t, 24.8, 25.7) - 1.2 * S(t, T.fall, T.fall + 0.75) ** 1.6;
     out.sink += 0.2 * S(t, T.fall, T.fall + 0.75);
     p.stance = 1 - S(t, T.fall, T.fall + 0.4);
+    out.limp = S(t, T.fall, T.fall + 0.35); out.lookW = 1 - S(t, T.strike, T.strike + 0.4);
   }
   p.crouch = Math.min(1, p.crouch);
   return out;

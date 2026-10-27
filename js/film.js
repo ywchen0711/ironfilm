@@ -2,11 +2,13 @@
 // The machines are Iron Front's own 3D wanzers (engine/mech3d.js), posed frame by frame from cast.js; this file
 // builds the stage, cuts between thirteen camera shots, draws the effects and runs the player.
 import * as THREE from '../engine/lib/three.module.min.js';
-import { buildMech, poseMech } from '../engine/mech3d.js?v=16';
-import { buildSet, SUN_DIR, FOG, FIRE_AT } from './set.js?v=1';
-import { FX, H } from './fx.js?v=1';
-import { LEN, T, SHOTS, RON, HOUND, ronPos, houndPos, ronPose, houndPose, LINES, TITLE, END, S, seg, ss, imp } from './cast.js?v=1';
-import * as score from './score.js?v=1';
+import { buildMech } from '../engine/mech3d.js?v=16';
+import { buildSet, SUN_DIR, FOG, FIRE_AT } from './set.js?v=2';
+import { FX, H } from './fx.js?v=2';
+import { LEN, T, SHOTS, RON, HOUND, ronPos, houndPos, ronPose, houndPose, LINES, TITLE, END, S, seg, ss, imp } from './cast.js?v=2';
+import * as score from './score.js?v=2';
+import { plans, yawRon, yawHound } from './motion.js?v=2';
+import * as rig from './rig.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -43,6 +45,13 @@ function cast(k) {
   scene.add(holder); return m;
 }
 const ron = cast(RON), hound = cast(HOUND);
+rig.extend(ron); rig.extend(hound);
+// the footwork and the springs, worked out once for the whole film
+const FEET = plans();
+const SM = {
+  ron: rig.bake(ron, ron.u, (t) => ronPose(t), LEN),
+  hound: rig.bake(hound, hound.u, (t) => houndPose(t), LEN),
+};
 // the Hound's sword arm, once it is cut off: a copy that tumbles away down the street
 const loose = hound.armR.sh.clone(true); loose.visible = false; scene.add(loose);
 loose.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -100,15 +109,17 @@ const SHAKES = [[T.land, 0.12, 5], [T.boom1, 0.2, 4], [T.boom2, 0.16, 4], [T.lea
 const FLASHES = [[T.boom1, 0.35], [T.clash, 0.45], [T.armOff, 0.3], [T.strike, 0.4], [T.boomB, 0.45]];
 
 // ---------------------------------------------------------------- one frame
+let debugCam = null;
 function frame(t) {
   // pose the machines
   const r = ronPos(t), h = houndPos(t), R = ronPose(t), Hd = houndPose(t);
   ron.holder.position.set(r.x, r.y, r.z);
-  ron.holder.rotation.y = ry(r, h) * (1 - R.faceFixed) + (Math.PI / 2) * R.faceFixed;
+  ron.holder.rotation.y = yawRon(t);
   hound.holder.position.set(h.x, h.y - Hd.sink, h.z);
-  hound.holder.rotation.y = ry(h, r); hound.group.rotation.x = Hd.tilt;
+  hound.holder.rotation.y = yawHound(t); hound.group.rotation.x = Hd.tilt;
   hound.u.hp.armR = Hd.armOff ? 0 : 100; hound.u.hp.body = Hd.dead ? 0 : 100;
-  poseMech(ron, ron.u, R.pose); poseMech(hound, hound.u, Hd.pose);
+  rig.apply(ron, ron.u, { t, s: R, sm: SM.ron.at(t), nodes: SM.ron.nodes, CH: rig.CH, feet: FEET.ron.at(t), yaw: ron.holder.rotation.y, other: V(h.x, h.y - Hd.sink + 1.25, h.z), ph: 0 });
+  rig.apply(hound, hound.u, { t, s: Hd, sm: SM.hound.at(t), nodes: SM.hound.nodes, CH: rig.CH, feet: FEET.hound.at(t), yaw: hound.holder.rotation.y, other: V(r.x, r.y + 1.25, r.z), ph: 2 });
   ron.mats.eye.color.set('#7af4ff'); hound.mats.eye.color.set(Math.floor(t * 3) % 2 ? '#ff3a24' : '#ff6a40');
   if (Hd.dead) hound.mats.eye.color.set('#200a08');
   scene.updateMatrixWorld();
@@ -132,9 +143,9 @@ function frame(t) {
     for (const s of [-1, 1]) fx.jet(t, wp(m.torso, s * 0.13, 0.0, -0.42), dir, k, seed * 10 + s);
   }
   // dust from Ron's steps in the second shot, the landings
-  for (let k = 0; k * 0.48 + 0.24 < T.stop; k++) { const at = k * 0.48 + 0.24; if (at > 3.3) { const p = ronPos(at); fx.dust(t, at, V(p.x + 0.1, 0, p.z + (k % 2 ? 0.15 : -0.15)), 0.35, 200 + k); } }
-  fx.dust(t, T.land, V(3.5, 0, 0.4), 2.0, 300); fx.dust(t, T.leapLand, V(ronPos(T.leapLand).x, 0, ronPos(T.leapLand).z), 0.9, 301);
-  fx.dust(t, T.ronLand, V(ronPos(T.ronLand).x, 0, ronPos(T.ronLand).z), 1.1, 302); fx.dust(t, T.fall + 0.75, V(houndPos(27).x + 0.6, 0, houndPos(27).z), 1.6, 303);
+  // dust where every foot comes down, more for a landing
+  for (const [who, P] of [[0, FEET.ron], [1, FEET.hound]]) P.steps.forEach((st, k) => { if (t >= st.t && t < st.t + 2.4) fx.dust(t, st.t, V(st.x, who && st.t < 6.3 ? 5 : 0, st.z), st.land ? (who ? 2.0 : 1.1) : 0.22 * st.k, 200 + who * 100 + k); });
+  fx.dust(t, T.fall + 0.75, V(houndPos(27).x + 0.6, 0, houndPos(27).z), 1.6, 303);
   fx.dust(t, T.charge, V(3.5, 0, houndPos(T.charge).z), 0.8, 304);
   // the gun
   for (const s of SHOTS) {
@@ -207,7 +218,7 @@ function frame(t) {
 
   // ---- the camera
   const si = SHOTLIST.findIndex(([a, b]) => t >= a && t < b), [a0, a1, shot] = SHOTLIST[si < 0 ? SHOTLIST.length - 1 : si];
-  const c = shot(t, C, Math.min(1, (t - a0) / (a1 - a0)));
+  const c = debugCam ? debugCam(t, C) : shot(t, C, Math.min(1, (t - a0) / (a1 - a0)));
   let shake = 0; for (const [te, amp, dec] of SHAKES) shake += amp * imp(t - te, 0.02, dec);
   const sx = (Math.sin(t * 61) + Math.sin(t * 97) * 0.5) * shake, sy = (Math.sin(t * 73 + 1) + Math.sin(t * 89) * 0.5) * shake;
   camera.position.copy(c.pos).add(V(sx * 0.6, sy * 0.6, 0));
@@ -291,7 +302,7 @@ window.addEventListener('keydown', (e) => {
 // the controls show while the mouse moves
 let idle = 0; window.addEventListener('pointermove', () => { document.body.classList.add('awake'); clearTimeout(idle); idle = setTimeout(() => document.body.classList.remove('awake'), 2200); });
 
-layout(); texts(); frame(state.t); bar(); loop();
+layout(); texts(); frame(state.t); bar(); loop(); score.load();
 if (state.t > 0) $('start').hidden = true;
 // for tests and screenshots
-window.FILM = { frame: (t) => { state.t = t; frame(t); bar(); }, T, LEN, state, setLang: (l) => { lang = l; texts(); } };
+window.FILM = { score, scene, THREE, ron, hound, frame: (t) => { state.t = t; frame(t); bar(); }, cam: (f) => { debugCam = f ? (t, C) => { const o = f(t, C); return { pos: V(...o.pos), look: V(...o.look), fov: o.fov || 35 }; } : null; }, T, LEN, state, setLang: (l) => { lang = l; texts(); } };
