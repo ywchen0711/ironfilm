@@ -8,7 +8,7 @@
 //     The springs are run once over the whole film at load, so any frame still stands on its own.
 import * as THREE from '../engine/lib/three.module.min.js';
 import { poseMech } from '../engine/mech3d.js?v=16';
-import { LEG } from './feet.js?v=2';
+import { LEG } from './feet.js?v=3';
 
 const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const HZ = 60;
@@ -39,11 +39,11 @@ const CH = [
 const node = (m, path) => path.split('.').reduce((o, k) => o?.[k], m);
 
 // bake: pose the machine at every 60th of a second with the engine, read the joints back, run the springs
-export function bake(m, u, poseAt, len) {
+export function bake(m, poseAt, len) {
   const N = Math.ceil(len * HZ) + 2, raw = CH.map(() => new Float32Array(N)), out = CH.map(() => new Float32Array(N));
   const nodes = CH.map(([p]) => node(m, p));
   for (let i = 0; i < N; i++) {
-    const s = poseAt(i / HZ); poseMech(m, s.u || u, { ...s.pose, walk: 0, muzzle: false });
+    const s = poseAt(i / HZ); poseMech(m, s.u, { ...s.pose, walk: 0, muzzle: false });
     CH.forEach(([, a, k], c) => { raw[c][i] = nodes[c] ? nodes[c][a][k] : 0; });
   }
   CH.forEach(([, , , w, z], c) => {

@@ -1,28 +1,57 @@
 # 鋼魂戰線：鐵鴉之夜 · Iron Front: Night of the Ravens
 
-An animated short filmed with the 3D engine of [Iron Front](https://github.com/ywchen0711/ironfront): a 30-second fight
-at sunset in a ruined city street. Ron, in the olive Pallas wanzer "Raven One", walks towards the ceasefire line; the
-Black Hound drops from a rooftop. The guns, two missiles, a charge on the jets, blade against shock rod, an arm cut
-off, and the last blow from above.
+Animated shorts filmed with the 3D engine of [Iron Front](https://github.com/ywchen0711/ironfront).
 
-Play: https://ywchen0711.github.io/ironfilm/ (space to play or pause, ← → to skip, Chinese or English subtitles).
+**Episode 1 (40 s).** The night before the truce. Ron walks Raven One towards the ceasefire line; the Black Hound
+drops from a rooftop. The Hound has the better of him: his gun is knocked from his hand and he goes down on one
+knee. As the blade comes up, Mia's attack helicopter comes in over the rooftops, rockets first. Ron gets up, and
+they finish it together.
 
-- `engine/` — Iron Front's renderer, copied unchanged: the wanzer models and their poses (`mech3d.js`), materials, three.js r160.
-- `js/cast.js` — the choreography: where each machine is and how it stands, worked out from the time alone.
-- `js/feet.js`, `js/motion.js` — footwork: each foot stays planted until the body moves off it, then steps ahead of where the body is going; both tuck up in a jump and land together.
-- `js/rig.js` — more joints over the engine's wanzer (toes, a hip that turns and swings out, an ankle that rolls to the ground, pelvis and chest turning against each other, shoulders lifting, a head that watches the other machine); two-bone IK for the legs; the upper body played through springs so blows follow through.
-- `js/film.js` — the stage, thirteen camera shots with hard cuts, shake and flashes, subtitles, the player.
-- `js/set.js` — the street: buildings with lit windows, ruins, wrecks, lamps, the sky dome.
-- `js/fx.js` — fire, smoke, sparks, dust, tracers, thrusters and electric arcs, all computed from the time, so any frame can be drawn on its own.
-- `js/score.js` — plays the soundtrack from wherever the film is.
-- `tools/mix.py` — builds `audio/soundtrack.mp3`: real recordings and a sampled orchestra mixed to the film's timeline (`tools/cues.mjs` exports every beat, gunshot and footstep from the film's own code).
+Play: https://ywchen0711.github.io/ironfilm/ (space to play or pause, ← → to skip, Chinese or English subtitles;
+`?t=12` starts at second 12, `?lang=en` in English, `?ep=ep1` picks the episode).
+
+## How it is built
+
+Everything a story needs is data; everything that draws, moves or sounds is shared.
+
+| | |
+|---|---|
+| `js/story/ep1.js` | **an episode**: its beats, the set, the actors and their tracks of moves, the camera shots, the words, extra cues, the music cue sheet |
+| `js/cast/characters.js` | **who can appear**: names, kind (wanzer, helicopter, voice), parts, paint, eye colour, which weapons |
+| `js/core/actions.js` | **the move library**: walk, move, jump, drop, charge, anchor (keep a distance), pin, blow (side / over / thrust / upper; clash / hit / ground), react, burst, missile, rockets, flares, kneel, sever, disarm, fall, die, guard, arm (keyframes), p (any pose parameter over a shape), face, lookat, fly, spot… each knows how it moves, poses, and what cues it sets off |
+| `js/core/runtime.js` | a story at work: where everyone is, which way they face, how they stand, at any moment; the full cue list. Pure arithmetic, shared with the sound tools |
+| `js/core/actors3d.js` | builds each character in 3D and poses it; named points (chest, head, muzzle, tipL, launcher, gun, podL…) for effects and cameras |
+| `js/core/director.js` | turns cues into effects: shots and tracers, missiles and rockets with smoke trails, blasts, clashes and arcs, sparks, flares, torn-off parts, fire |
+| `js/core/camera.js` | shot types: moving between two points, following actors, fixed, circling |
+| `js/models/weapons.js` | detailed weapons: machine gun, shock rod, blade, shoulder launcher, missile, rocket |
+| `js/models/heli.js` | the attack helicopter: rotors, stub wings and pods, chin gun, lights, searchlight |
+| `js/feet.js`, `js/rig.js` | footwork (planted feet, steps, landings, kneeling), leg IK, extra joints, spring follow-through |
+| `js/fx.js`, `js/set.js` | particles and arcs; the street at sunset |
+| `engine/` | Iron Front's renderer, copied unchanged: the wanzer models (`mech3d.js`), materials, three.js r160 |
+| `tools/cues.mjs`, `tools/mix.py` | the soundtrack: every cue, step and thruster burn exported from the story, then mixed from real recordings and an orchestra |
+
+### A new episode
+
+1. Copy `js/story/ep1.js` to `js/story/ep2.js` and change it: actors (`who` is a character id), their `track` of
+   moves, `shots`, `lines`, `cues`, `music`, `LEN`.
+2. `node tools/cues.mjs ep2 > tools/cues.json`, then `python -P tools/mix.py RAW KN FIRE VSCO HELI` → `audio/ep2.mp3`.
+3. Open `?ep=ep2`.
+
+### A new character
+
+Add an entry to `js/cast/characters.js`: a wanzer with its Iron Front parts (`engine/data.js` ids), paint and
+weapons (`mg`, `rod`, `blade`, `launcher`), or a helicopter with its paint. Then use its id as `who` in a story.
+
+### A new move or weapon
+
+A move is one entry in `ACT` (`js/core/actions.js`) with `move`, `pose` and/or `cues`. A weapon is a builder in
+`js/models/weapons.js` returning its group and named points; add it to `BUILD` in `js/core/actors3d.js`.
 
 ## Sound
 
 All CC0 (public domain):
-- [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library) — the machine gun (an AK-47, single shots cut from a recording and pitched down)
+- [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library) — the guns (an AK-47, single shots cut from a recording and pitched down; deeper still for the helicopter's cannon)
 - [Versilian Studios Chamber Orchestra 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) — strings, horns, trombones, tuba, timpani, drums, cymbals and gong for the score
+- Helicopter recordings: [Helicopter Sounds](https://opengameart.org/content/helicopter-sounds) (aquinn) and [Helicopter SFX](https://opengameart.org/node/131039) (WuxiaScrub)
 - [Kenney](https://kenney.nl): Impact Sounds and Sci-fi Sounds — steps, metal, thrusters, explosions, the shock rod's hum
-- [Kaiju Night](https://github.com/ywchen0711/kaiju-night)'s designed effects (themselves built from CC0 recordings) — swings, metal clashes, electric bolts, the collapse
-
-`?t=12` starts at second 12; `?lang=en` for English.
+- [Kaiju Night](https://github.com/ywchen0711/kaiju-night)'s designed effects (themselves built from CC0 recordings) — swings, metal clashes, electric bolts

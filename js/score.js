@@ -1,7 +1,8 @@
-// The soundtrack: one finished mix of real recordings and an orchestral score (built by tools/mix.py, timed to the
-// film from tools/cues.json), played from wherever the film is. Playing, pausing and jumping restart it at that point.
-let token = 0, ac = null, buf = null, src = null, gain = null, muted = false, loading = null, startedAt = 0, from = 0;
+// The soundtrack: one finished mix per episode of real recordings and an orchestral score (built by tools/mix.py from
+// the episode's own cues), played from wherever the film is. Playing, pausing and jumping restart it at that point.
+let url = 'audio/ep1.mp3', token = 0, ac = null, buf = null, src = null, gain = null, muted = false, loading = null, startedAt = 0, from = 0;
 export const isMuted = () => muted;
+export function setSource(u) { if (u !== url) { url = u; loading = null; buf = null; } }
 export function setMuted(m) { muted = m; if (gain) gain.gain.value = m ? 0 : 1; }
 function ctx() {
   if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); gain = ac.createGain(); gain.gain.value = muted ? 0 : 1; gain.connect(ac.destination); }
@@ -9,7 +10,7 @@ function ctx() {
   return ac;
 }
 export function load() {
-  if (!loading) loading = fetch('audio/soundtrack.mp3?v=1').then((r) => r.arrayBuffer()).then((a) => new Promise((ok, no) => ctx().decodeAudioData(a, ok, no))).then((b) => { buf = b; return b; }).catch(() => null);
+  if (!loading) loading = fetch(url).then((r) => r.arrayBuffer()).then((a) => new Promise((ok, no) => ctx().decodeAudioData(a, ok, no))).then((b) => { buf = b; return b; }).catch(() => null);
   return loading;
 }
 export async function play(t) {

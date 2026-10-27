@@ -15,7 +15,9 @@ export function planFeet(o) {
   const HZ = 60, dt = 1 / HZ, N = Math.ceil(o.len * HZ) + 2;
   const kx = o.kx || 1;
   // a foot's place in the body's own frame: in a fighting stance the left foot forward, the right back and turned out
-  const off = (side, t) => { const st = o.stance(t); return { x: side * (LEG.hipX * kx + 0.03 + 0.03 * st), z: side < 0 ? 0.13 * st : -0.12 * st, yaw: side < 0 ? -0.1 * st : 0.32 * st }; };
+  // kneeling: the left foot well forward, the right knee down with the foot back behind it on its toes
+  const kn = (t) => (o.kneel ? o.kneel(t) : 0);
+  const off = (side, t) => { const st = o.stance(t), k = kn(t); return { x: side * (LEG.hipX * kx + 0.03 + 0.03 * st), z: side < 0 ? 0.13 * st + 0.16 * k : -0.12 * st - 0.26 * k, yaw: side < 0 ? -0.1 * st : 0.32 * st * (1 - k) }; };
   const want = (side, t) => { const r = o.root(t), th = o.yaw(t), f = off(side, t), p = rot(th, f.x, f.z); return { x: r.x + p.x, z: r.z + p.z, yaw: th + f.yaw }; };
   const vel = (t) => { const a = o.root(Math.max(0, t - 0.02)), b = o.root(t + 0.02); return { x: (b.x - a.x) / 0.04, z: (b.z - a.z) / 0.04 }; };
   const feet = [-1, 1].map((side) => { const w = want(side, 0); return { side, mode: 'plant', x: w.x, z: w.z, yaw: w.yaw, lastEnd: -1 }; });
@@ -55,8 +57,10 @@ export function planFeet(o) {
         x = f.from.x + (f.to.x - f.from.x) * e; z = f.from.z + (f.to.z - f.from.z) * e; yaw = f.yaw0 + (f.yaw1 - f.yaw0) * e;
         y = fl + (0.04 + 0.22 * Math.min(0.6, f.dist)) * Math.pow(Math.sin(q * Math.PI), 0.8);
         pitch = 0.5 * bump(q, 0, 0.4) - 0.22 * bump(q, 0.45, 0.98); mode = 1; // the heel comes up first; the toe lifts to land
-      } else if (f.mode === 'air') mode = 2;
+      }
+      else if (f.mode === 'air') mode = 2;
       else if (f.mode === 'glide') { y = fl + 0.03; mode = 3; pitch = 0.15; }
+      if (f.side > 0 && f.mode === 'plant') pitch = Math.max(pitch, 1.0 * kn(t)); // up on the toes behind a kneel
       D[b] = x; D[b + 1] = y; D[b + 2] = z; D[b + 3] = yaw; D[b + 4] = pitch; D[b + 5] = mode;
       if (mode === 0 || mode === 3) {
         const hp = rot(th, f.side * LEG.hipX * kx, 0), dh = Math.hypot(r.x + hp.x - x, r.z + hp.z - z);
@@ -64,7 +68,7 @@ export function planFeet(o) {
       }
     });
     // the hips: lowered by the crouch and the stance, held down to what the legs can reach; springy, a little
-    const target = Math.min(0.64 - 0.17 * o.crouch(t) - 0.025 * o.stance(t), hipMax);
+    const k = kn(t), target = Math.min((0.64 - 0.17 * o.crouch(t) - 0.025 * o.stance(t)) * (1 - k) + 0.31 * k, hipMax);
     if (i === 0) hy = target;
     for (let s = 0; s < 4; s++) { const w = 26, z = 0.8, a = w * w * (target - hy) - 2 * z * w * hv; hv += a * dt / 4; hy += hv * dt / 4; }
     hip[i] = Math.min(hy, hipMax);
