@@ -49,7 +49,7 @@ export default {
     props: [
       { type: 'barrier', at: [26.5, -4.6], to: [26.5, 4.6], gap: [-1.3, 1.3] },
       { type: 'gate', at: [26.5, -1.3], len: 2.6, open: 1 },
-      { type: 'booth', at: [27.9, -2.8], ry: -PI / 2 },
+      { type: 'booth', at: [31.4, -2.9], ry: -PI / 2 },
       { type: 'flood', at: [29.6, -3.9], aim: [23, 0, -0.6], h: 4.2 }, { type: 'flood', at: [29.6, 3.9], aim: [23, 0, 0.6], h: 4.2 },
       { type: 'flag', at: [26.9, -3.4], col: ['#2a4a8a', '#e8e4d8'] }, { type: 'flag', at: [26.9, 3.4], col: ['#8a2a24', '#e8c040'], ph: 2 },
       { type: 'sandbags', at: [28.4, 2.7], n: 9, ry: PI / 2 }, { type: 'sandbags', at: [28.3, -1.9], n: 6, ry: PI / 2 },
